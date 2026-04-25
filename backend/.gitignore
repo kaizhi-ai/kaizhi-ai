@@ -1,0 +1,10 @@
+# Compiled binary (matches ./backend in this directory only)
+/backend
+
+# Runtime auth state
+/auths/
+
+# Go test artifacts
+*.test
+*.out
+coverage.out
