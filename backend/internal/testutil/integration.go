@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"kaizhi/backend/internal/apikeys"
+	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/ids"
 	"kaizhi/backend/internal/postgres"
 	appusage "kaizhi/backend/internal/usage"
@@ -26,6 +27,7 @@ type Env struct {
 	UserStore   *users.Store
 	APIKeyStore *apikeys.Store
 	UsageStore  *appusage.Store
+	ChatStore   *chats.Store
 	APIKeys     *apikeys.Service
 	Tokens      *users.TokenService
 	Router      *gin.Engine
@@ -89,6 +91,7 @@ func Setup(t *testing.T) *Env {
 	userStore := users.NewStore(pool)
 	apiKeyStore := apikeys.NewStore(pool)
 	usageStore := appusage.NewStore(pool)
+	chatStore := chats.NewStore(pool)
 	tokens, err := users.NewTokenService("integration-test-jwt-secret")
 	if err != nil {
 		pool.Close()
@@ -109,6 +112,7 @@ func Setup(t *testing.T) *Env {
 	users.NewHandlers(userStore, tokens).RegisterRoutes(router)
 	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore, tokens).RegisterRoutes(router)
 	appusage.NewHandlers(usageStore, userStore, tokens).RegisterRoutes(router)
+	chats.NewHandlers(chatStore, userStore, tokens).RegisterRoutes(router)
 
 	cleanup := func() {
 		pool.Close()
@@ -119,6 +123,7 @@ func Setup(t *testing.T) *Env {
 		UserStore:   userStore,
 		APIKeyStore: apiKeyStore,
 		UsageStore:  usageStore,
+		ChatStore:   chatStore,
 		APIKeys:     apiKeyService,
 		Tokens:      tokens,
 		Router:      router,

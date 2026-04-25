@@ -18,6 +18,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"kaizhi/backend/internal/apikeys"
+	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/postgres"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
@@ -49,6 +50,7 @@ func main() {
 	userStore := users.NewStore(db)
 	apiKeyStore := apikeys.NewStore(db)
 	usageStore := appusage.NewStore(db)
+	chatStore := chats.NewStore(db)
 
 	tokenService, err := users.NewTokenService(os.Getenv("JWT_SECRET"))
 	if err != nil {
@@ -64,6 +66,7 @@ func main() {
 	userHandlers := users.NewHandlers(userStore, tokenService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore, tokenService)
 	usageHandlers := appusage.NewHandlers(usageStore, userStore, tokenService)
+	chatHandlers := chats.NewHandlers(chatStore, userStore, tokenService)
 
 	cfg, err := config.LoadConfig(absConfigPath)
 	if err != nil {
@@ -78,6 +81,7 @@ func main() {
 				userHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
+				chatHandlers.RegisterRoutes(engine)
 			}),
 		).
 		Build()

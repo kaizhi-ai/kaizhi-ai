@@ -88,4 +88,24 @@ CREATE TABLE IF NOT EXISTS usage_daily (
 
 CREATE INDEX IF NOT EXISTS usage_daily_user_day_idx ON usage_daily(user_id, day DESC);
 CREATE INDEX IF NOT EXISTS usage_daily_api_key_day_idx ON usage_daily(api_key_id, day DESC);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+	id TEXT PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	title TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_sessions_user_updated_idx ON chat_sessions(user_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+	id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+	role TEXT NOT NULL,
+	parts JSONB NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_messages_session_created_idx ON chat_messages(session_id, created_at);
 `
