@@ -49,6 +49,19 @@ func main() {
 		log.Fatalf("ensure postgres schema: %v", err)
 	}
 	userStore := users.NewStore(db)
+
+	if adminEmail, adminPassword := os.Getenv("ADMIN_EMAIL"), os.Getenv("ADMIN_PASSWORD"); adminEmail != "" && adminPassword != "" {
+		action, err := users.EnsureAdmin(ctx, userStore, adminEmail, adminPassword)
+		if err != nil {
+			log.Fatalf("ensure admin user: %v", err)
+		}
+		switch action {
+		case users.AdminCreated:
+			log.Printf("created admin user %s from ADMIN_EMAIL/ADMIN_PASSWORD", adminEmail)
+		case users.AdminPasswordUpdated:
+			log.Printf("updated admin user %s password from ADMIN_PASSWORD", adminEmail)
+		}
+	}
 	apiKeyStore := apikeys.NewStore(db)
 	usageStore := appusage.NewStore(db)
 	chatStore := chats.NewStore(db)

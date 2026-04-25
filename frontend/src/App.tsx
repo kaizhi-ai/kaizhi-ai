@@ -1,20 +1,17 @@
-import { useState } from "react"
+import { Route, Routes } from "react-router-dom"
 
-import { Button } from "@/components/ui/button"
+import RequireAuth from "@/components/require-auth"
+import HomePage from "@/pages/home"
+import LoginPage from "@/pages/login"
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background text-foreground">
-      <h1 className="text-4xl font-semibold tracking-tight">
-        kaizhi2 frontend
-      </h1>
-      <p className="text-muted-foreground">
-        React + Vite + Tailwind v4 + shadcn/ui
-      </p>
-      <Button onClick={() => setCount((c) => c + 1)}>Count is {count}</Button>
-    </main>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireAuth />}>
+        <Route path="/" element={<HomePage />} />
+      </Route>
+    </Routes>
   )
 }
 

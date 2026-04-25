@@ -13,7 +13,7 @@ func TestChatsLifecycle(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	user := testutil.RegisterUser(t, env.Router, "chat@example.com", "password123")
+	user := testutil.SeedUser(t, env, "chat@example.com", "password123")
 
 	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", user.AccessToken, map[string]string{"title": "first"})
 	if createResp.Code != http.StatusCreated {
@@ -95,7 +95,7 @@ func TestChatsRejectsInvalidParts(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	user := testutil.RegisterUser(t, env.Router, "parts@example.com", "password123")
+	user := testutil.SeedUser(t, env, "parts@example.com", "password123")
 	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", user.AccessToken, nil)
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("create chat status = %d", createResp.Code)
@@ -148,8 +148,8 @@ func TestChatsAreIsolatedPerUser(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	owner := testutil.RegisterUser(t, env.Router, "owner@example.com", "password123")
-	other := testutil.RegisterUser(t, env.Router, "other@example.com", "password123")
+	owner := testutil.SeedUser(t, env, "owner@example.com", "password123")
+	other := testutil.SeedUser(t, env, "other@example.com", "password123")
 
 	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", owner.AccessToken, map[string]string{"title": "secret"})
 	if createResp.Code != http.StatusCreated {

@@ -13,7 +13,7 @@ func TestAPIKeyCreateListAndRevoke(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	user := testutil.RegisterUser(t, env.Router, "keys@example.com", "password123")
+	user := testutil.SeedUser(t, env, "keys@example.com", "password123")
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "integration key")
 	if createdKey.ID == "" || createdKey.UserID != user.User.ID {
 		t.Fatalf("created api key = %+v, want id and user id", createdKey)

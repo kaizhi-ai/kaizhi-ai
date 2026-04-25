@@ -12,7 +12,7 @@ func TestUsageEndpoints(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	user := testutil.RegisterUser(t, env.Router, "usage@example.com", "password123")
+	user := testutil.SeedUser(t, env, "usage@example.com", "password123")
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
 	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, createdKey.ID)
 	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")

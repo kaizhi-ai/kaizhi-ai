@@ -70,6 +70,21 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 	return &user, nil
 }
 
+func (s *Store) UpdatePasswordHash(ctx context.Context, id, passwordHash string) error {
+	tag, err := s.db.Exec(ctx, `
+		UPDATE users
+		SET password_hash = $1, updated_at = now()
+		WHERE id = $2
+	`, passwordHash, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `

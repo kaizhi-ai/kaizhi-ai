@@ -1,0 +1,48 @@
+import { useCallback, useEffect, useState, type ReactNode } from "react"
+
+import {
+  clearToken,
+  fetchCurrentUser,
+  getToken,
+  type AuthUser,
+} from "@/lib/auth-client"
+import { AuthContext } from "@/lib/auth-context"
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(() => getToken() !== null)
+
+  useEffect(() => {
+    if (!getToken()) return
+    let cancelled = false
+    fetchCurrentUser().then((u) => {
+      if (cancelled) return
+      setUser(u)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const refresh = useCallback(async () => {
+    if (!getToken()) {
+      setUser(null)
+      return null
+    }
+    const u = await fetchCurrentUser()
+    setUser(u)
+    return u
+  }, [])
+
+  const signOut = useCallback(() => {
+    clearToken()
+    setUser(null)
+  }, [])
+
+  return (
+    <AuthContext.Provider value={{ user, loading, refresh, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}

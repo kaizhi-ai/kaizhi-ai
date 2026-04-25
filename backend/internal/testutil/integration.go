@@ -131,18 +131,27 @@ func Setup(t *testing.T) *Env {
 	}
 }
 
-func RegisterUser(t *testing.T, router http.Handler, email, password string) AuthResponse {
+// SeedUser inserts a user directly through the store and returns a signed
+// access token. There is no public registration endpoint, so tests that need
+// an authenticated caller use this helper instead of an HTTP round-trip.
+func SeedUser(t *testing.T, env *Env, email, password string) AuthResponse {
 	t.Helper()
-	resp := DoJSON(t, router, http.MethodPost, "/api/v1/auth/register", "", map[string]string{
-		"email":    email,
-		"password": password,
-	})
-	if resp.Code != http.StatusOK {
-		t.Fatalf("register status = %d, body = %s", resp.Code, resp.Body.String())
+	hash, err := users.HashPassword(password)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
 	}
-
+	user, err := env.UserStore.CreateUser(context.Background(), email, hash)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	token, _, err := env.Tokens.Sign(user)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
 	var body AuthResponse
-	DecodeJSON(t, resp, &body)
+	body.AccessToken = token
+	body.User.ID = user.ID
+	body.User.Email = user.Email
 	return body
 }
 

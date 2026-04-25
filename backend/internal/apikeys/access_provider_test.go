@@ -14,7 +14,7 @@ func TestAPIKeyProviderAuthentication(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	user := testutil.RegisterUser(t, env.Router, "provider@example.com", "password123")
+	user := testutil.SeedUser(t, env, "provider@example.com", "password123")
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "provider key")
 
 	provider := apikeys.NewAccessProvider(env.APIKeys)

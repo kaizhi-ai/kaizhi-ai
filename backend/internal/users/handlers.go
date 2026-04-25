@@ -1,9 +1,7 @@
 package users
 
 import (
-	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,47 +17,8 @@ func NewHandlers(store *Store, tokens *TokenService) *Handlers {
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	auth := engine.Group("/api/v1/auth")
-	auth.POST("/register", h.register)
 	auth.POST("/login", h.login)
 	auth.GET("/me", AuthMiddleware(h.store, h.tokens), h.me)
-}
-
-func (h *Handlers) register(c *gin.Context) {
-	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	email := NormalizeEmail(req.Email)
-	if email == "" || !strings.Contains(email, "@") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email"})
-		return
-	}
-	if len(req.Password) < 8 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 8 characters"})
-		return
-	}
-
-	passwordHash, err := HashPassword(req.Password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
-		return
-	}
-
-	user, err := h.store.CreateUser(c.Request.Context(), email, passwordHash)
-	if err != nil {
-		if errors.Is(err, ErrEmailExists) {
-			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create user"})
-		return
-	}
-	h.respondWithToken(c, user)
 }
 
 func (h *Handlers) login(c *gin.Context) {
