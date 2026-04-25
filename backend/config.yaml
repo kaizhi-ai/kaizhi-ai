@@ -3,8 +3,7 @@ port: 8317
 
 auth-dir: "./auths"
 
-api-keys:
-  - "kaizhi-dev-key"
+api-keys: []
 
 remote-management:
   allow-remote: false

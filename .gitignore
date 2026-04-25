@@ -15,6 +15,7 @@ pnpm-debug.log*
 
 # Go build artifacts
 backend/backend
+backend/auths/
 *.test
 *.out
 coverage.out
