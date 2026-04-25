@@ -22,6 +22,7 @@ import (
 	"kaizhi/backend/internal/postgres"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
+	"kaizhi/backend/web"
 )
 
 func main() {
@@ -77,11 +78,13 @@ func main() {
 		WithConfig(cfg).
 		WithConfigPath(absConfigPath).
 		WithServerOptions(
+			api.WithMiddleware(web.SPAMiddleware()),
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
 				userHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
 				chatHandlers.RegisterRoutes(engine)
+				engine.NoRoute(web.NoRouteHandler())
 			}),
 		).
 		Build()

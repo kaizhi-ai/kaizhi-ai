@@ -8,3 +8,7 @@
 *.test
 *.out
 coverage.out
+
+# Embedded frontend build output (populated by `pnpm build` in ../frontend)
+/web/dist/*
+!/web/dist/.gitkeep
