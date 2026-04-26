@@ -4,11 +4,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
 
 func TestSPAMiddlewareServesClientRouteBeforeBackendRoute(t *testing.T) {
+	withTestIndex(t)
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(SPAMiddleware())
@@ -26,6 +29,20 @@ func TestSPAMiddlewareServesClientRouteBeforeBackendRoute(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), `<div id="root"></div>`) {
 		t.Fatalf("body does not look like SPA index.html: %s", resp.Body.String())
 	}
+}
+
+func withTestIndex(t *testing.T) {
+	t.Helper()
+
+	originalContent := indexContent
+	originalModTime := indexModTime
+	indexContent = []byte(`<!doctype html><div id="root"></div>`)
+	indexModTime = time.Unix(0, 0)
+
+	t.Cleanup(func() {
+		indexContent = originalContent
+		indexModTime = originalModTime
+	})
 }
 
 func TestSPAMiddlewareUsesClientRouteSegmentBoundaries(t *testing.T) {
