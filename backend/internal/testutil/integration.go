@@ -109,7 +109,12 @@ func Setup(t *testing.T) *Env {
 	auth.NewHandlers(userStore, apiKeyService).RegisterRoutes(router)
 	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore).RegisterRoutes(router)
 	appusage.NewHandlers(usageStore, userStore, apiKeyService).RegisterRoutes(router)
-	chats.NewHandlers(chatStore, userStore, apiKeyService).RegisterRoutes(router)
+	chats.NewHandlers(
+		chatStore,
+		userStore,
+		apiKeyService,
+		chats.WithMediaRoot(t.TempDir()),
+	).RegisterRoutes(router)
 
 	cleanup := func() {
 		pool.Close()

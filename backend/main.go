@@ -33,8 +33,10 @@ import (
 
 const (
 	kaizhiDataDirEnv   = "KAIZHI_DATA_DIR"
+	defaultDataDirName = "data"
 	defaultConfigName  = "config.yaml"
 	defaultAuthDirName = "auths"
+	defaultMediaDir    = "media"
 )
 
 func defaultCLIProxyConfig(authDir string) string {
@@ -139,7 +141,16 @@ func main() {
 	authHandlers := auth.NewHandlers(userStore, apiKeyService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)
 	usageHandlers := appusage.NewHandlers(usageStore, userStore, apiKeyService)
-	chatHandlers := chats.NewHandlers(chatStore, userStore, apiKeyService)
+	mediaRoot := filepath.Join(defaultDataDirName, defaultMediaDir)
+	if dataDirConfigured {
+		mediaRoot = filepath.Join(dataDir, defaultMediaDir)
+	}
+	chatHandlers := chats.NewHandlers(
+		chatStore,
+		userStore,
+		apiKeyService,
+		chats.WithMediaRoot(mediaRoot),
+	)
 
 	cfg, err := config.LoadConfig(absConfigPath)
 	if err != nil {

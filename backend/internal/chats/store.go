@@ -126,6 +126,38 @@ func (s *Store) DeleteChatSession(ctx context.Context, userID, sessionID string)
 	return nil
 }
 
+func (s *Store) CountFilePartURLReferences(ctx context.Context, userID string, urls []string) (map[string]int, error) {
+	counts := make(map[string]int, len(urls))
+	if len(urls) == 0 {
+		return counts, nil
+	}
+
+	rows, err := s.db.Query(ctx, `
+		SELECT part->>'url' AS url, count(*)::int
+		FROM chat_messages cm
+		JOIN chat_sessions cs ON cs.id = cm.session_id
+		CROSS JOIN LATERAL jsonb_array_elements(cm.parts) AS part
+		WHERE cs.user_id = $1
+		  AND part->>'type' = 'file'
+		  AND part->>'url' = ANY($2)
+		GROUP BY part->>'url'
+	`, userID, urls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var url string
+		var count int
+		if err := rows.Scan(&url, &count); err != nil {
+			return nil, err
+		}
+		counts[url] = count
+	}
+	return counts, rows.Err()
+}
+
 func (s *Store) AppendChatMessage(ctx context.Context, id, userID, sessionID, role string, parts json.RawMessage) (*ChatMessage, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {

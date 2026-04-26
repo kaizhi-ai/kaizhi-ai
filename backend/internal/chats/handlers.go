@@ -3,7 +3,9 @@ package chats
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,22 +27,46 @@ var allowedRoles = map[string]struct{}{
 }
 
 type Handlers struct {
-	store   *Store
-	users   *users.Store
-	apiKeys *apikeys.Service
+	store     *Store
+	users     *users.Store
+	apiKeys   *apikeys.Service
+	mediaRoot string
 }
 
-func NewHandlers(store *Store, userStore *users.Store, apiKeys *apikeys.Service) *Handlers {
-	return &Handlers{store: store, users: userStore, apiKeys: apiKeys}
+type HandlerOption func(*Handlers)
+
+func WithMediaRoot(root string) HandlerOption {
+	return func(h *Handlers) {
+		root = strings.TrimSpace(root)
+		if root != "" {
+			h.mediaRoot = root
+		}
+	}
+}
+
+func NewHandlers(store *Store, userStore *users.Store, apiKeys *apikeys.Service, opts ...HandlerOption) *Handlers {
+	h := &Handlers{
+		store:     store,
+		users:     userStore,
+		apiKeys:   apiKeys,
+		mediaRoot: filepath.Join("data", "media"),
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
+	engine.GET("/api/v1/chats/media/:user_id/:filename", h.serveAttachment)
+
 	group := engine.Group("/api/v1/chats")
 	group.Use(apikeys.AuthMiddleware(h.apiKeys, h.users))
 	group.POST("", h.create)
 	group.GET("", h.list)
 	group.PATCH("/:id", h.rename)
 	group.DELETE("/:id", h.delete)
+	group.POST("/uploads", h.uploadAttachment)
 	group.GET("/:id/messages", h.listMessages)
 	group.POST("/:id/messages", h.appendMessage)
 }
@@ -114,9 +140,20 @@ func (h *Handlers) rename(c *gin.Context) {
 
 func (h *Handlers) delete(c *gin.Context) {
 	user := apikeys.CurrentUser(c)
-	if err := h.store.DeleteChatSession(c.Request.Context(), user.ID, c.Param("id")); err != nil {
+	chatID := c.Param("id")
+	messages, err := h.store.ListChatMessages(c.Request.Context(), user.ID, chatID)
+	if err != nil {
 		respondStoreError(c, err, "failed to delete chat")
 		return
+	}
+	mediaFiles := h.chatMediaFiles(user.ID, messages)
+
+	if err := h.store.DeleteChatSession(c.Request.Context(), user.ID, chatID); err != nil {
+		respondStoreError(c, err, "failed to delete chat")
+		return
+	}
+	if err := h.deleteUnreferencedChatMediaFiles(c.Request.Context(), user.ID, mediaFiles); err != nil {
+		log.Printf("chats: cleanup media for deleted chat %s: %v", chatID, err)
 	}
 	c.Status(http.StatusNoContent)
 }
@@ -161,6 +198,10 @@ func (h *Handlers) appendMessage(c *gin.Context) {
 	}
 	if len(decoded) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "parts must not be empty"})
+		return
+	}
+	if err := h.validateMessageParts(user.ID, decoded); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

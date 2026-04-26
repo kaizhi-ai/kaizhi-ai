@@ -10,9 +10,30 @@ export type MessagePart =
       text: string
     }
   | {
+      type: "file"
+      mediaType: string
+      url: string
+      filename?: string
+    }
+  | {
       type: string
       [key: string]: unknown
     }
+
+export type ChatAttachment = {
+  url: string
+  mediaType: string
+  name: string
+  size: number
+}
+
+const SUPPORTED_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+])
+const LOCAL_CHAT_MEDIA_PATH_RE = /^\/api\/v1\/chats\/media\/[^/?#]+\/[^/?#]+$/
 
 export type ChatSession = {
   id: string
@@ -40,7 +61,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   const body = init.body
   const hasBody = body !== undefined && body !== null
-  if (hasBody && !headers.has("Content-Type")) {
+  if (hasBody && !(body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json")
   }
   headers.set("Authorization", `Bearer ${authToken()}`)
@@ -61,6 +82,12 @@ function joinTextParts(parts: ReadonlyArray<{ type: string; text?: string }>) {
     .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
     .join("")
     .trim()
+}
+
+function isSupportedLocalImage(mediaType: string, url: string) {
+  return (
+    SUPPORTED_IMAGE_MIME.has(mediaType) && LOCAL_CHAT_MEDIA_PATH_RE.test(url)
+  )
 }
 
 export async function listChats(): Promise<ChatSession[]> {
@@ -97,6 +124,17 @@ export async function appendChatMessage(
   })
 }
 
+export async function uploadChatAttachment(
+  file: File
+): Promise<ChatAttachment> {
+  const form = new FormData()
+  form.append("file", file)
+  return apiFetch<ChatAttachment>("/api/v1/chats/uploads", {
+    method: "POST",
+    body: form,
+  })
+}
+
 export function draftTitleFromText(text: string): string {
   const title = text.trim().replace(/\s+/g, " ").slice(0, 40)
   return title || "新对话"
@@ -110,6 +148,28 @@ export function uiMessageToMessageParts(message: UIMessage): MessagePart[] {
   const parts = message.parts
     .map((part): MessagePart | null => {
       if (part.type === "text") return { type: "text", text: part.text }
+      if (part.type === "file") {
+        const file = part as {
+          mediaType?: unknown
+          url?: unknown
+          filename?: unknown
+        }
+        if (
+          typeof file.mediaType !== "string" ||
+          typeof file.url !== "string" ||
+          !isSupportedLocalImage(file.mediaType, file.url)
+        ) {
+          return null
+        }
+        return {
+          type: "file",
+          mediaType: file.mediaType,
+          url: file.url,
+          ...(typeof file.filename === "string"
+            ? { filename: file.filename }
+            : {}),
+        }
+      }
       return null
     })
     .filter((part) => part !== null)
@@ -127,10 +187,24 @@ export function chatMessagesToUIMessages(messages: ChatMessage[]): UIMessage[] {
     .map((message) => ({
       id: message.id,
       role: message.role as UIMessage["role"],
-      parts: message.parts.flatMap((part) =>
+      parts: message.parts.flatMap<UIMessage["parts"][number]>((part) =>
         part.type === "text" && typeof part.text === "string"
           ? [{ type: "text" as const, text: part.text }]
-          : []
+          : part.type === "file" &&
+              typeof part.mediaType === "string" &&
+              typeof part.url === "string" &&
+              isSupportedLocalImage(part.mediaType, part.url)
+            ? [
+                {
+                  type: "file" as const,
+                  mediaType: part.mediaType,
+                  url: part.url,
+                  ...(typeof part.filename === "string"
+                    ? { filename: part.filename }
+                    : {}),
+                },
+              ]
+            : []
       ),
     }))
 }
