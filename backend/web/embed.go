@@ -91,6 +91,9 @@ func SPAMiddleware() gin.HandlerFunc {
 		case p == "/":
 			serveIndex(c)
 			c.Abort()
+		case isClientRoute(p):
+			serveIndex(c)
+			c.Abort()
 		case strings.HasPrefix(p, "/assets/"), p == "/favicon.svg":
 			if !fileExists(strings.TrimPrefix(p, "/")) {
 				c.AbortWithStatus(http.StatusNotFound)
@@ -128,6 +131,20 @@ func serveIndex(c *gin.Context) {
 	// no-cache so users always pick up new asset hashes after a deploy.
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	http.ServeContent(c.Writer, c.Request, "index.html", indexModTime, bytes.NewReader(indexContent))
+}
+
+func isClientRoute(p string) bool {
+	for _, prefix := range []string{
+		"/admin",
+		"/chat",
+		"/login",
+		"/settings",
+	} {
+		if hasPathPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isAPIPath(p string) bool {

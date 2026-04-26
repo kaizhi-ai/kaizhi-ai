@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom"
+import { Navigate, Route, Routes } from "react-router-dom"
 
 import RequireAdmin from "@/components/require-admin"
 import RequireAuth from "@/components/require-auth"
@@ -8,7 +8,6 @@ import AdminOAuthProvidersPage from "@/pages/admin-oauth-providers"
 import AdminOpenAICompatibilityProviderPage from "@/pages/admin-openai-compatibility-provider"
 import AdminUsersPage from "@/pages/admin-users"
 import ChatPage from "@/pages/chat"
-import HomePage from "@/pages/home"
 import LoginPage from "@/pages/login"
 import SettingsPage from "@/pages/settings"
 import SettingsAPIKeysPage from "@/pages/settings-api-keys"
@@ -18,7 +17,7 @@ function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<RequireAuth />}>
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/chat/:id" element={<ChatPage />} />
         <Route path="/settings" element={<SettingsPage />}>
