@@ -13,6 +13,11 @@ import {
   type ProviderAPIKeyModel,
 } from "@/lib/provider-api-keys-client"
 import {
+  proxyEnabledFromURL,
+  proxyStatusLabel,
+  proxyURLFromEnabled,
+} from "@/lib/proxy-mode"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -58,6 +63,7 @@ import {
   ExcludedRowsEditor,
   ModelRowsEditor,
 } from "@/components/admin/model-rows-editors"
+import { ProxySwitchField } from "@/components/admin/proxy-switch-field"
 
 const KEY_META: Record<
   ProviderAPIKeyKind,
@@ -204,7 +210,7 @@ export default function AdminAPIKeyProviderPage() {
               <TableHead className="min-w-36">类型</TableHead>
               <TableHead className="min-w-40">API Key</TableHead>
               <TableHead className="min-w-56">Base URL</TableHead>
-              <TableHead className="min-w-48">Proxy URL</TableHead>
+              <TableHead className="min-w-24">代理</TableHead>
               <TableHead className="w-24">白名单</TableHead>
               <TableHead className="w-24">黑名单</TableHead>
               <TableHead className="w-12"></TableHead>
@@ -233,8 +239,8 @@ export default function AdminAPIKeyProviderPage() {
                   <TableCell className="max-w-64 truncate text-xs text-muted-foreground">
                     {row.base_url || KEY_META[row.provider].defaultBaseUrl}
                   </TableCell>
-                  <TableCell className="max-w-56 truncate font-mono text-xs text-muted-foreground">
-                    {row.proxy_url || "全局默认"}
+                  <TableCell className="text-xs text-muted-foreground">
+                    {proxyStatusLabel(row.proxy_url)}
                   </TableCell>
                   <TableCell>{row.models?.length ?? 0}</TableCell>
                   <TableCell>{row.excluded_models?.length ?? 0}</TableCell>
@@ -390,7 +396,9 @@ function ProviderKeyForm({
   const [baseUrl, setBaseUrl] = useState(
     initial?.base_url || meta.defaultBaseUrl
   )
-  const [proxyUrl, setProxyUrl] = useState(initial?.proxy_url ?? "")
+  const [proxyEnabled, setProxyEnabled] = useState(() =>
+    proxyEnabledFromURL(initial?.proxy_url)
+  )
   const [models, setModels] = useState<ProviderAPIKeyModel[]>(
     normalizeRows(initial?.models)
   )
@@ -401,6 +409,7 @@ function ProviderKeyForm({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fetching, setFetching] = useState(false)
+  const proxyUrl = proxyURLFromEnabled(proxyEnabled)
 
   async function handleFetchModels() {
     setError(null)
@@ -498,21 +507,11 @@ function ProviderKeyForm({
           className="h-9"
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`provider-proxy-url-${kind}`}>
-          Proxy URL{" "}
-          <span className="text-muted-foreground">
-            （可选，留空走全局设置）
-          </span>
-        </Label>
-        <Input
-          id={`provider-proxy-url-${kind}`}
-          placeholder="socks5://user:pass@127.0.0.1:1080/"
-          value={proxyUrl}
-          onChange={(event) => setProxyUrl(event.target.value)}
-          className="h-9 font-mono"
-        />
-      </div>
+      <ProxySwitchField
+        id={`provider-proxy-${kind}`}
+        checked={proxyEnabled}
+        onCheckedChange={setProxyEnabled}
+      />
       <div className="flex flex-col gap-1.5">
         <Label>
           白名单模型{" "}

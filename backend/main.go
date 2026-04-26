@@ -28,11 +28,13 @@ import (
 	"kaizhi/backend/internal/provider"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
+	"kaizhi/backend/internal/xrayproxy"
 	"kaizhi/backend/web"
 )
 
 const (
 	kaizhiDataDirEnv   = "KAIZHI_DATA_DIR"
+	kaizhiProxyURLEnv  = "KAIZHI_PROXY_URL"
 	defaultDataDirName = "data"
 	defaultConfigName  = "config.yaml"
 	defaultAuthDirName = "auths"
@@ -47,6 +49,7 @@ func defaultCLIProxyConfig(authDir string) string {
 	return `host: "127.0.0.1"
 port: 8317
 auth-dir: ` + strconv.Quote(filepath.ToSlash(authDir)) + `
+proxy-url: ` + strconv.Quote(xrayproxy.ProxyURL(xrayproxy.DefaultSOCKS5Addr)) + `
 api-keys: []
 remote-management:
   allow-remote: false
@@ -164,6 +167,23 @@ func main() {
 		if err := os.MkdirAll(cfg.AuthDir, 0o700); err != nil {
 			log.Fatalf("create auth-dir: %v", err)
 		}
+	}
+
+	upstreamProxyURL := strings.TrimSpace(os.Getenv(kaizhiProxyURLEnv))
+	xraySocks, err := xrayproxy.StartSOCKS5(ctx, xrayproxy.DefaultSOCKS5Addr, upstreamProxyURL)
+	if err != nil {
+		log.Fatalf("start xray-core socks5 proxy: %v", err)
+	}
+	defer func() {
+		if err := xraySocks.Close(); err != nil {
+			log.Printf("close xray-core socks5 proxy: %v", err)
+		}
+	}()
+	cfg.ProxyURL = xraySocks.ProxyURL()
+	if upstreamProxyURL != "" {
+		log.Printf("started xray-core socks5 proxy on %s with %s; CLIProxyAPI proxy-url=%s", xraySocks.Addr(), kaizhiProxyURLEnv, cfg.ProxyURL)
+	} else {
+		log.Printf("started xray-core socks5 proxy on %s; CLIProxyAPI proxy-url=%s", xraySocks.Addr(), cfg.ProxyURL)
 	}
 
 	tokenStore := sdkauth.GetTokenStore()

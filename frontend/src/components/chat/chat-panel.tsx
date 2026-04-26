@@ -198,7 +198,8 @@ function ChatImage({
 
     fetchChatMediaAsDataURL(part.url, token)
       .then((dataUrl) => {
-        if (!cancelled) setFetched({ url: part.url, src: dataUrl, failed: false })
+        if (!cancelled)
+          setFetched({ url: part.url, src: dataUrl, failed: false })
       })
       .catch(() => {
         if (!cancelled) setFetched({ url: part.url, src: null, failed: true })

@@ -13,6 +13,11 @@ import {
   type OpenAICompatibilityProviderModel,
 } from "@/lib/openai-compatibility-providers-client"
 import {
+  proxyEnabledFromURL,
+  proxySummaryLabel,
+  proxyURLFromEnabled,
+} from "@/lib/proxy-mode"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -39,6 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -57,7 +63,7 @@ type EditableAPIKeyEntry = {
   localId: string
   index?: number
   apiKey: string
-  proxyUrl: string
+  proxyEnabled: boolean
   preview?: string
   hasSavedKey: boolean
   showKey: boolean
@@ -100,11 +106,8 @@ function proxySummary(row: OpenAICompatibilityProvider) {
   const proxies =
     row.api_key_entries
       ?.filter((entry) => entry.has_api_key)
-      .map((entry) => entry.proxy_url?.trim() || "全局默认") ?? []
-  if (proxies.length === 0) return row.proxy_url || "全局默认"
-  const unique = Array.from(new Set(proxies))
-  if (unique.length === 1) return unique[0]
-  return `${unique.length} 个代理`
+      .map((entry) => entry.proxy_url) ?? []
+  return proxySummaryLabel(proxies, row.proxy_url)
 }
 
 function keyRowsFromProvider(
@@ -116,7 +119,7 @@ function keyRowsFromProvider(
       localId: nextAPIKeyRowID(),
       index: entry.index,
       apiKey: "",
-      proxyUrl: entry.proxy_url ?? "",
+      proxyEnabled: proxyEnabledFromURL(entry.proxy_url),
       preview: entry.api_key_preview,
       hasSavedKey: entry.has_api_key,
       showKey: false,
@@ -127,7 +130,7 @@ function keyRowsFromProvider(
       localId: nextAPIKeyRowID(),
       index: initial?.has_api_key ? 0 : undefined,
       apiKey: "",
-      proxyUrl: initial?.proxy_url ?? "",
+      proxyEnabled: proxyEnabledFromURL(initial?.proxy_url),
       preview: initial?.api_key_preview,
       hasSavedKey: initial?.has_api_key ?? false,
       showKey: false,
@@ -238,7 +241,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
               <TableHead className="min-w-40">名称</TableHead>
               <TableHead className="min-w-40">API Keys</TableHead>
               <TableHead className="min-w-64">Base URL</TableHead>
-              <TableHead className="min-w-48">Proxy URL</TableHead>
+              <TableHead className="min-w-24">代理</TableHead>
               <TableHead className="w-24">模型</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
@@ -421,7 +424,7 @@ function OpenAICompatibilityProviderForm({
       {
         localId: nextAPIKeyRowID(),
         apiKey: "",
-        proxyUrl: "",
+        proxyEnabled: true,
         hasSavedKey: false,
         showKey: false,
       },
@@ -441,7 +444,7 @@ function OpenAICompatibilityProviderForm({
       .map((entry) => ({
         index: entry.index,
         apiKey: entry.apiKey,
-        proxyUrl: entry.proxyUrl,
+        proxyUrl: proxyURLFromEnabled(entry.proxyEnabled),
       }))
   }
 
@@ -458,7 +461,7 @@ function OpenAICompatibilityProviderForm({
         name: initial?.name || name,
         apiKey: entry.apiKey,
         baseUrl,
-        proxyUrl: entry.proxyUrl,
+        proxyUrl: proxyURLFromEnabled(entry.proxyEnabled),
       })
       setModels(ids.map((id) => ({ name: id, alias: modelAliasFromName(id) })))
     } catch (err) {
@@ -546,7 +549,7 @@ function OpenAICompatibilityProviderForm({
           {apiKeyEntries.map((entry, index) => (
             <div
               key={entry.localId}
-              className="grid gap-2 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+              className="grid gap-2 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_96px_auto]"
             >
               <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor={`${entry.localId}-key`}>
@@ -583,18 +586,22 @@ function OpenAICompatibilityProviderForm({
                 </div>
               </div>
               <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor={`${entry.localId}-proxy`}>Proxy URL</Label>
-                <Input
-                  id={`${entry.localId}-proxy`}
-                  placeholder="socks5://user:pass@127.0.0.1:1080/"
-                  value={entry.proxyUrl}
-                  onChange={(event) =>
-                    updateAPIKeyEntry(entry.localId, {
-                      proxyUrl: event.target.value,
-                    })
-                  }
-                  className="h-9 min-w-0 font-mono text-xs"
-                />
+                <Label htmlFor={`${entry.localId}-proxy`}>代理</Label>
+                <div className="flex h-9 items-center gap-2">
+                  <Switch
+                    id={`${entry.localId}-proxy`}
+                    checked={entry.proxyEnabled}
+                    onCheckedChange={(checked) =>
+                      updateAPIKeyEntry(entry.localId, {
+                        proxyEnabled: checked,
+                      })
+                    }
+                    aria-label={`API Key ${index + 1} 使用代理`}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {entry.proxyEnabled ? "开启" : "直连"}
+                  </span>
+                </div>
               </div>
               <Button
                 type="button"

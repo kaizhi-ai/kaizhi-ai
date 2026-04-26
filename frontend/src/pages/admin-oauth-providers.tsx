@@ -19,6 +19,11 @@ import {
   type OAuthProviderId,
 } from "@/lib/oauth-providers-client"
 import {
+  proxyEnabledFromURL,
+  proxyStatusLabel,
+  proxyURLFromEnabled,
+} from "@/lib/proxy-mode"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -61,6 +66,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { ProxySwitchField } from "@/components/admin/proxy-switch-field"
 
 const PROVIDERS: OAuthProviderId[] = ["codex", "anthropic", "gemini"]
 
@@ -210,7 +216,7 @@ export default function AdminOAuthProvidersPage() {
             <TableRow>
               <TableHead className="min-w-44">类型</TableHead>
               <TableHead className="min-w-56">账号</TableHead>
-              <TableHead className="min-w-56">Proxy URL</TableHead>
+              <TableHead className="min-w-24">代理</TableHead>
               <TableHead className="min-w-40">更新时间</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
@@ -235,8 +241,8 @@ export default function AdminOAuthProvidersPage() {
                   <TableCell className="max-w-80 truncate font-medium">
                     {fileTitle(row.file)}
                   </TableCell>
-                  <TableCell className="max-w-72 truncate font-mono text-xs text-muted-foreground">
-                    {row.file.proxy_url || "全局默认"}
+                  <TableCell className="text-xs text-muted-foreground">
+                    {proxyStatusLabel(row.file.proxy_url)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {formatDate(row.file.updated_at)}
@@ -256,7 +262,7 @@ export default function AdminOAuthProvidersPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setProxyTarget(row)}>
-                          编辑 Proxy URL
+                          编辑代理
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -342,7 +348,7 @@ export default function AdminOAuthProvidersPage() {
             <DialogTitle>
               {proxyTarget ? `编辑 ${fileTitle(proxyTarget.file)}` : ""}
             </DialogTitle>
-            <DialogDescription>留空则使用全局 Proxy URL。</DialogDescription>
+            <DialogDescription>开启走全局代理，关闭后直连。</DialogDescription>
           </DialogHeader>
           {proxyTarget && (
             <ProxyURLForm
@@ -397,12 +403,13 @@ function OAuthFlow({
   const [authState, setAuthState] = useState<string | null>(null)
   const [authUrl, setAuthUrl] = useState<string | null>(null)
   const [projectId, setProjectId] = useState("")
-  const [proxyUrl, setProxyUrl] = useState("")
+  const [proxyEnabled, setProxyEnabled] = useState(true)
   const [redirectUrl, setRedirectUrl] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
+  const proxyUrl = proxyURLFromEnabled(proxyEnabled)
 
   async function start() {
     setError(null)
@@ -466,16 +473,11 @@ function OAuthFlow({
             />
           </div>
         )}
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="oauth-proxy-url-new">Proxy URL</Label>
-          <Input
-            id="oauth-proxy-url-new"
-            placeholder="留空使用全局默认，或填 socks5://127.0.0.1:1080/"
-            value={proxyUrl}
-            onChange={(event) => setProxyUrl(event.target.value)}
-            className="h-9 font-mono"
-          />
-        </div>
+        <ProxySwitchField
+          id="oauth-proxy-new"
+          checked={proxyEnabled}
+          onCheckedChange={setProxyEnabled}
+        />
         {error && <p className="text-sm break-all text-destructive">{error}</p>}
         <div className="flex justify-end">
           <Button
@@ -554,7 +556,9 @@ function ProxyURLForm({
   target: ProxyTarget
   onSaved: () => Promise<void>
 }) {
-  const [proxyUrl, setProxyUrl] = useState(target.file.proxy_url ?? "")
+  const [proxyEnabled, setProxyEnabled] = useState(() =>
+    proxyEnabledFromURL(target.file.proxy_url)
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -566,7 +570,7 @@ function ProxyURLForm({
       await updateOAuthProviderProxyURL(
         target.provider,
         target.file.name,
-        proxyUrl
+        proxyURLFromEnabled(proxyEnabled)
       )
       await onSaved()
     } catch (err) {
@@ -578,16 +582,11 @@ function ProxyURLForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="oauth-proxy-url">Proxy URL</Label>
-        <Input
-          id="oauth-proxy-url"
-          placeholder="socks5://user:pass@127.0.0.1:1080/"
-          value={proxyUrl}
-          onChange={(event) => setProxyUrl(event.target.value)}
-          className="h-9 font-mono"
-        />
-      </div>
+      <ProxySwitchField
+        id="oauth-proxy"
+        checked={proxyEnabled}
+        onCheckedChange={setProxyEnabled}
+      />
       {error && <p className="text-sm break-all text-destructive">{error}</p>}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
