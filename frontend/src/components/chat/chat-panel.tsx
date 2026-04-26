@@ -4,9 +4,9 @@ import {
   type OpenAILanguageModelResponsesOptions,
 } from "@ai-sdk/openai"
 import { useChat } from "@ai-sdk/react"
-import { convertToModelMessages, streamText } from "ai"
+import { convertToModelMessages, stepCountIs, streamText } from "ai"
 import type { ChatTransport, UIMessage } from "ai"
-import { ArrowUp, Paperclip, Plus, Square, X } from "lucide-react"
+import { ArrowUp, Globe, Paperclip, Plus, Square, X } from "lucide-react"
 
 import { getToken } from "@/lib/auth-client"
 import {
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/chat-container"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -39,6 +40,7 @@ import {
   PromptInputTextarea,
 } from "@/components/ui/prompt-input"
 import { ScrollButton } from "@/components/ui/scroll-button"
+import { AssistantMessageParts } from "@/components/chat/message-parts"
 
 const CHAT_MODEL = "gpt-5.5"
 const ACCEPT_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"]
@@ -274,16 +276,13 @@ function MessageBubble({ message }: { message: UIMessage }) {
     )
   }
 
-  if (!text) return null
+  if (!hasRenderableAssistantParts(message.parts)) return null
 
   return (
     <Message className="items-start">
-      <MessageContent
-        markdown
-        className="w-full bg-transparent p-0 break-words text-foreground dark:text-white"
-      >
-        {text}
-      </MessageContent>
+      <div className="w-full space-y-3 break-words text-foreground dark:text-white">
+        <AssistantMessageParts parts={message.parts} />
+      </div>
     </Message>
   )
 }
@@ -303,6 +302,23 @@ function shouldPersistUserMessage(body: unknown) {
   return true
 }
 
+function shouldUseWebSearch(body: unknown, fallback: boolean) {
+  if (body && typeof body === "object" && "webSearch" in body) {
+    return (body as { webSearch?: unknown }).webSearch === true
+  }
+  return fallback
+}
+
+function hasRenderableAssistantParts(parts: UIMessage["parts"]) {
+  return parts.some(
+    (part) =>
+      (part.type === "text" && Boolean(part.text)) ||
+      part.type === "tool-web_search" ||
+      part.type === "tool-google_search" ||
+      part.type === "source-url"
+  )
+}
+
 export function ChatPanel({
   chatId,
   initialMessages,
@@ -315,6 +331,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<LocalAttachment[]>([])
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -345,10 +362,15 @@ export function ChatPanel({
           baseURL: `${window.location.origin}/v1`,
         })
         const modelMessages = await inlineChatFilesForModel(messages, token)
+        const tools = shouldUseWebSearch(body, webSearchEnabled)
+          ? { web_search: openai.tools.webSearch() }
+          : undefined
 
         const result = streamText({
           model: openai.responses(CHAT_MODEL),
           messages: await convertToModelMessages(modelMessages),
+          tools,
+          stopWhen: tools ? stepCountIs(5) : undefined,
           abortSignal,
           providerOptions: {
             openai: {
@@ -359,6 +381,7 @@ export function ChatPanel({
 
         return result.toUIMessageStream({
           originalMessages: messages,
+          sendSources: true,
           onFinish: async ({ responseMessage }) => {
             const saved = await appendChatMessage(
               targetChatId,
@@ -373,7 +396,7 @@ export function ChatPanel({
         return null
       },
     }),
-    [chatId, onPersistedMessage]
+    [chatId, onPersistedMessage, webSearchEnabled]
   )
 
   const {
@@ -512,7 +535,13 @@ export function ChatPanel({
           role: "user",
           parts: modelParts,
         },
-        { body: { chatId: targetChatId, skipPersistUser: true } }
+        {
+          body: {
+            chatId: targetChatId,
+            skipPersistUser: true,
+            webSearch: webSearchEnabled,
+          },
+        }
       )
       onPersistedMessage(savedUser)
       await sendPromise
@@ -658,6 +687,13 @@ export function ChatPanel({
                     <Paperclip className="mr-2 size-4" />
                     添加图片
                   </DropdownMenuItem>
+                  <DropdownMenuCheckboxItem
+                    checked={webSearchEnabled}
+                    onCheckedChange={setWebSearchEnabled}
+                  >
+                    <Globe className="mr-2 size-4" />
+                    联网搜索
+                  </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <PromptInputAction tooltip={isBusy ? "停止生成" : "发送"}>
