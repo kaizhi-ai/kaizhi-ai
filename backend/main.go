@@ -118,7 +118,9 @@ func main() {
 		api.NewManagementTokenRequester(cfg, coreManager),
 		tokenStore,
 		coreManager,
+		absConfigPath,
 	)
+	providerOAuthHandlers.SetCLIProxyConfig(cfg)
 
 	svc, err := cliproxy.NewBuilder().
 		WithConfig(cfg).

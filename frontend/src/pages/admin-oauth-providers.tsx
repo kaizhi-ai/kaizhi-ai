@@ -397,6 +397,7 @@ function OAuthFlow({
   const [authState, setAuthState] = useState<string | null>(null)
   const [authUrl, setAuthUrl] = useState<string | null>(null)
   const [projectId, setProjectId] = useState("")
+  const [proxyUrl, setProxyUrl] = useState("")
   const [redirectUrl, setRedirectUrl] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -407,7 +408,7 @@ function OAuthFlow({
     setError(null)
     setStarting(true)
     try {
-      const result = await startOAuthProvider(provider, { projectId })
+      const result = await startOAuthProvider(provider, { projectId, proxyUrl })
       setAuthUrl(result.url)
       setAuthState(result.state)
       setRedirectUrl("")
@@ -465,6 +466,16 @@ function OAuthFlow({
             />
           </div>
         )}
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="oauth-proxy-url-new">Proxy URL</Label>
+          <Input
+            id="oauth-proxy-url-new"
+            placeholder="留空使用全局默认，或填 socks5://127.0.0.1:1080/"
+            value={proxyUrl}
+            onChange={(event) => setProxyUrl(event.target.value)}
+            className="h-9 font-mono"
+          />
+        </div>
         {error && <p className="text-sm break-all text-destructive">{error}</p>}
         <div className="flex justify-end">
           <Button
@@ -523,7 +534,7 @@ function OAuthFlow({
           placeholder="http://localhost:1455/?code=...&state=..."
           value={redirectUrl}
           onChange={(event) => setRedirectUrl(event.target.value)}
-          className="min-w-0 max-w-full resize-y overflow-x-hidden whitespace-pre-wrap break-all font-mono text-xs field-sizing-fixed [overflow-wrap:anywhere]"
+          className="field-sizing-fixed max-w-full min-w-0 resize-y overflow-x-hidden font-mono text-xs [overflow-wrap:anywhere] break-all whitespace-pre-wrap"
         />
       </div>
       {error && <p className="text-sm break-all text-destructive">{error}</p>}

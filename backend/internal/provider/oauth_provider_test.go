@@ -1,12 +1,15 @@
 package provider
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
@@ -148,6 +151,91 @@ func TestPublicAuthFileUsesMetadataProxyURL(t *testing.T) {
 	}
 }
 
+func TestStartOAuthStoresPendingProxyURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requester := &fakeManagementRequester{}
+	handlers := NewHandlers(nil, nil, requester, nil, nil)
+	router := gin.New()
+	router.POST("/:provider/start", handlers.startOAuth)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/gemini/start", strings.NewReader(`{"project_id":"project-1","proxy_url":"socks5://127.0.0.1:1080"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s, want 200", resp.Code, resp.Body.String())
+	}
+	if requester.geminiProjectID != "project-1" {
+		t.Fatalf("gemini project id = %q, want project-1", requester.geminiProjectID)
+	}
+	flow, ok := handlers.pendingOAuthFlow("state-1")
+	if !ok {
+		t.Fatalf("pending flow missing")
+	}
+	if flow.ProxyURL != "socks5://127.0.0.1:1080" {
+		t.Fatalf("pending proxy url = %q, want proxy", flow.ProxyURL)
+	}
+}
+
+func TestFinishOAuthAppliesPendingProxyURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := newMemoryAuthStore()
+	oldAuth := &coreauth.Auth{
+		ID:        "codex-old.json",
+		Provider:  "codex",
+		FileName:  "codex-old.json",
+		Metadata:  map[string]any{"type": "codex", "email": "old@example.com"},
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}
+	if _, err := store.Save(context.Background(), oldAuth); err != nil {
+		t.Fatalf("save old auth: %v", err)
+	}
+
+	requester := &fakeManagementRequester{
+		statuses:       []oauthStatusPayload{{Status: "ok"}},
+		callbackStatus: http.StatusOK,
+		onCallback: func() {
+			_, _ = store.Save(context.Background(), &coreauth.Auth{
+				ID:        "codex-new.json",
+				Provider:  "codex",
+				FileName:  "codex-new.json",
+				Metadata:  map[string]any{"type": "codex", "email": "new@example.com"},
+				UpdatedAt: time.Now(),
+			})
+		},
+	}
+	handlers := NewHandlers(nil, nil, requester, store, nil)
+	handlers.setPendingOAuthFlow(
+		"codex",
+		"state-1",
+		"socks5://127.0.0.1:1080",
+		time.Now().Add(-time.Minute),
+		map[string]struct{}{"codex-old.json": {}},
+	)
+	router := gin.New()
+	router.POST("/:provider/finish", handlers.finishOAuth)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/codex/finish", strings.NewReader(`{"code":"abc","state":"state-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s, want 200", resp.Code, resp.Body.String())
+	}
+	auth, ok := store.get("codex-new.json")
+	if !ok {
+		t.Fatalf("new auth missing")
+	}
+	if auth.ProxyURL != "socks5://127.0.0.1:1080" {
+		t.Fatalf("ProxyURL = %q, want proxy", auth.ProxyURL)
+	}
+	if got, _ := auth.Metadata["proxy_url"].(string); got != "socks5://127.0.0.1:1080" {
+		t.Fatalf("metadata proxy_url = %q, want proxy", got)
+	}
+}
+
 func newFinishOAuthTestRouter(statuses []oauthStatusPayload, callbackStatus int) (*gin.Engine, *fakeManagementRequester) {
 	gin.SetMode(gin.TestMode)
 	requester := &fakeManagementRequester{
@@ -161,10 +249,12 @@ func newFinishOAuthTestRouter(statuses []oauthStatusPayload, callbackStatus int)
 }
 
 type fakeManagementRequester struct {
-	statuses       []oauthStatusPayload
-	statusCalls    int
-	callbackStatus int
-	callbackBody   string
+	statuses        []oauthStatusPayload
+	statusCalls     int
+	callbackStatus  int
+	callbackBody    string
+	geminiProjectID string
+	onCallback      func()
 }
 
 func (f *fakeManagementRequester) RequestAnthropicToken(c *gin.Context) {
@@ -172,6 +262,7 @@ func (f *fakeManagementRequester) RequestAnthropicToken(c *gin.Context) {
 }
 
 func (f *fakeManagementRequester) RequestGeminiCLIToken(c *gin.Context) {
+	f.geminiProjectID = c.Query("project_id")
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "url": "https://example.com/auth", "state": "state-1"})
 }
 
@@ -211,5 +302,51 @@ func (f *fakeManagementRequester) PostOAuthCallback(c *gin.Context) {
 		c.JSON(status, gin.H{"error": "callback failed"})
 		return
 	}
+	if f.onCallback != nil {
+		f.onCallback()
+	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+type memoryAuthStore struct {
+	mu      sync.Mutex
+	records map[string]*coreauth.Auth
+}
+
+func newMemoryAuthStore() *memoryAuthStore {
+	return &memoryAuthStore{records: make(map[string]*coreauth.Auth)}
+}
+
+func (s *memoryAuthStore) List(context.Context) ([]*coreauth.Auth, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	records := make([]*coreauth.Auth, 0, len(s.records))
+	for _, record := range s.records {
+		records = append(records, record.Clone())
+	}
+	return records, nil
+}
+
+func (s *memoryAuthStore) Save(_ context.Context, auth *coreauth.Auth) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.records[auth.ID] = auth.Clone()
+	return auth.ID, nil
+}
+
+func (s *memoryAuthStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.records, id)
+	return nil
+}
+
+func (s *memoryAuthStore) get(id string) (*coreauth.Auth, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	record, ok := s.records[id]
+	if !ok {
+		return nil, false
+	}
+	return record.Clone(), true
 }

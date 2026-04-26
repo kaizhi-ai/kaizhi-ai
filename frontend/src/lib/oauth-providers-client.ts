@@ -21,6 +21,8 @@ type ErrorBody = {
   message?: string
 }
 
+const OAUTH_PROVIDER_PATH = "/api/v1/oauth-provider"
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   if (!token) throw new Error("请先登录")
@@ -52,22 +54,23 @@ export async function listOAuthProviders(
   provider: OAuthProviderId
 ): Promise<AuthFile[]> {
   const data = await request<{ files?: AuthFile[] }>(
-    `/api/v1/provider/oauth/${provider}`
+    `${OAUTH_PROVIDER_PATH}/${provider}`
   )
   return data.files ?? []
 }
 
 export async function startOAuthProvider(
   provider: OAuthProviderId,
-  options: { projectId?: string } = {}
+  options: { projectId?: string; proxyUrl?: string } = {}
 ): Promise<{ url: string; state: string }> {
-  const query = new URLSearchParams()
   const projectId = options.projectId?.trim()
-  if (provider === "gemini" && projectId) query.set("project_id", projectId)
-  const qs = query.toString()
+  const proxyUrl = options.proxyUrl?.trim()
+  const body: Record<string, string> = {}
+  if (provider === "gemini" && projectId) body.project_id = projectId
+  if (proxyUrl) body.proxy_url = proxyUrl
   return request<{ url: string; state: string }>(
-    `/api/v1/provider/oauth/${provider}/start${qs ? `?${qs}` : ""}`,
-    { method: "POST" }
+    `${OAUTH_PROVIDER_PATH}/${provider}/start`,
+    { method: "POST", body: JSON.stringify(body) }
   )
 }
 
@@ -75,7 +78,7 @@ export async function finishOAuthProvider(
   provider: OAuthProviderId,
   input: { state: string; redirectUrl: string }
 ): Promise<void> {
-  await request(`/api/v1/provider/oauth/${provider}/finish`, {
+  await request(`${OAUTH_PROVIDER_PATH}/${provider}/finish`, {
     method: "POST",
     body: JSON.stringify({
       state: input.state,
@@ -89,7 +92,7 @@ export async function deleteOAuthProvider(
   name: string
 ): Promise<void> {
   const query = new URLSearchParams({ name })
-  await request(`/api/v1/provider/oauth/${provider}?${query.toString()}`, {
+  await request(`${OAUTH_PROVIDER_PATH}/${provider}?${query.toString()}`, {
     method: "DELETE",
   })
 }
@@ -99,7 +102,7 @@ export async function updateOAuthProviderProxyURL(
   name: string,
   proxyUrl: string
 ): Promise<AuthFile> {
-  return request<AuthFile>(`/api/v1/provider/oauth/${provider}/proxy`, {
+  return request<AuthFile>(`${OAUTH_PROVIDER_PATH}/${provider}/proxy`, {
     method: "PATCH",
     body: JSON.stringify({ name, proxy_url: proxyUrl }),
   })

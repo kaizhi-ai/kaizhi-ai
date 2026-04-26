@@ -3,7 +3,9 @@ import { Route, Routes } from "react-router-dom"
 import RequireAdmin from "@/components/require-admin"
 import RequireAuth from "@/components/require-auth"
 import AdminPage from "@/pages/admin"
+import AdminAPIKeyProviderPage from "@/pages/admin-api-key-provider"
 import AdminOAuthProvidersPage from "@/pages/admin-oauth-providers"
+import AdminOpenAICompatibilityProviderPage from "@/pages/admin-openai-compatibility-provider"
 import ChatPage from "@/pages/chat"
 import HomePage from "@/pages/home"
 import LoginPage from "@/pages/login"
@@ -23,6 +25,14 @@ function App() {
         </Route>
         <Route element={<RequireAdmin />}>
           <Route path="/admin" element={<AdminPage />}>
+            <Route
+              path="api-key-provider"
+              element={<AdminAPIKeyProviderPage />}
+            />
+            <Route
+              path="openai-compatibility-provider"
+              element={<AdminOpenAICompatibilityProviderPage />}
+            />
             <Route
               path="oauth-providers"
               element={<AdminOAuthProvidersPage />}

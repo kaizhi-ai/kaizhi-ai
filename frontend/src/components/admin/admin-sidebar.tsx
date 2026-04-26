@@ -1,7 +1,9 @@
 import {
   ArrowLeft,
   ChevronsUpDown,
+  Globe,
   KeyRound,
+  LogIn,
   LogOut,
   Settings,
 } from "lucide-react"
@@ -71,13 +73,39 @@ export function AdminSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  tooltip="API Key Provider"
+                  isActive={location.pathname.startsWith(
+                    "/admin/api-key-provider"
+                  )}
+                  onClick={() => navigate("/admin/api-key-provider")}
+                >
+                  <KeyRound />
+                  <span>API Key Provider</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="OpenAI Compatibility"
+                  isActive={location.pathname.startsWith(
+                    "/admin/openai-compatibility-provider"
+                  )}
+                  onClick={() =>
+                    navigate("/admin/openai-compatibility-provider")
+                  }
+                >
+                  <Globe />
+                  <span>OpenAI Compatibility</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
                   tooltip="OAuth Provider"
                   isActive={location.pathname.startsWith(
                     "/admin/oauth-providers"
                   )}
                   onClick={() => navigate("/admin/oauth-providers")}
                 >
-                  <KeyRound />
+                  <LogIn />
                   <span>OAuth Provider</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

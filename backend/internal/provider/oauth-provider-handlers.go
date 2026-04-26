@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	sdkapi "github.com/router-for-me/CLIProxyAPI/v6/sdk/api"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
+	sdkconfig "github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/users"
 )
@@ -30,30 +32,71 @@ type Handlers struct {
 	requester   sdkapi.ManagementTokenRequester
 	authStore   coreauth.Store
 	authManager *coreauth.Manager
+	cfg         *sdkconfig.Config
+	configPath  string
 
 	mu                sync.Mutex
+	configMu          sync.Mutex
 	latestStateByUser map[string]string
+	pendingOAuthFlows map[string]pendingOAuthFlow
 }
 
-func NewHandlers(apiKeys *apikeys.Service, userStore *users.Store, requester sdkapi.ManagementTokenRequester, authStore coreauth.Store, authManager *coreauth.Manager) *Handlers {
+func NewHandlers(apiKeys *apikeys.Service, userStore *users.Store, requester sdkapi.ManagementTokenRequester, authStore coreauth.Store, authManager *coreauth.Manager, configPath ...string) *Handlers {
+	path := ""
+	if len(configPath) > 0 {
+		path = strings.TrimSpace(configPath[0])
+	}
 	return &Handlers{
 		apiKeys:           apiKeys,
 		users:             userStore,
 		requester:         requester,
 		authStore:         authStore,
 		authManager:       authManager,
+		configPath:        path,
 		latestStateByUser: make(map[string]string),
+		pendingOAuthFlows: make(map[string]pendingOAuthFlow),
 	}
 }
 
+func (h *Handlers) SetCLIProxyConfig(cfg *sdkconfig.Config) {
+	if h == nil {
+		return
+	}
+	h.configMu.Lock()
+	h.cfg = cfg
+	h.configMu.Unlock()
+}
+
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
-	group := engine.Group("/api/v1/provider/oauth")
+	group := engine.Group("/api/v1/oauth-provider")
 	group.Use(apikeys.AuthMiddleware(h.apiKeys, h.users), apikeys.RequireAdmin())
 	group.GET("/:provider", h.listAuthFiles)
 	group.POST("/:provider/start", h.startOAuth)
 	group.POST("/:provider/finish", h.finishOAuth)
 	group.DELETE("/:provider", h.deleteAuthFile)
 	group.PATCH("/:provider/proxy", h.patchAuthProxyURL)
+
+	apiKeyGroup := engine.Group("/api/v1/api-key-provider")
+	apiKeyGroup.Use(apikeys.AuthMiddleware(h.apiKeys, h.users), apikeys.RequireAdmin())
+	apiKeyGroup.GET("", h.listProviderAPIKeys)
+	apiKeyGroup.POST("", h.createProviderAPIKey)
+	apiKeyGroup.POST("/models", h.fetchProviderAPIKeyModels)
+	apiKeyGroup.PATCH("", h.patchProviderAPIKey)
+	apiKeyGroup.DELETE("", h.deleteProviderAPIKey)
+	apiKeyGroup.GET("/:id", h.getProviderAPIKey)
+	apiKeyGroup.PATCH("/:id", h.patchProviderAPIKey)
+	apiKeyGroup.DELETE("/:id", h.deleteProviderAPIKey)
+
+	compatGroup := engine.Group("/api/v1/openai-compatibility-provider")
+	compatGroup.Use(apikeys.AuthMiddleware(h.apiKeys, h.users), apikeys.RequireAdmin())
+	compatGroup.GET("", h.listOpenAICompatibilityProviders)
+	compatGroup.POST("", h.createOpenAICompatibilityProvider)
+	compatGroup.POST("/models", h.fetchOpenAICompatibilityProviderModels)
+	compatGroup.PATCH("", h.patchOpenAICompatibilityProvider)
+	compatGroup.DELETE("", h.deleteOpenAICompatibilityProvider)
+	compatGroup.GET("/:name", h.getOpenAICompatibilityProvider)
+	compatGroup.PATCH("/:name", h.patchOpenAICompatibilityProvider)
+	compatGroup.DELETE("/:name", h.deleteOpenAICompatibilityProvider)
 }
 
 func (h *Handlers) listAuthFiles(c *gin.Context) {
@@ -79,15 +122,27 @@ func (h *Handlers) startOAuth(c *gin.Context) {
 		return
 	}
 
+	startReq, err := parseStartOAuthRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	restoreQuery := applyStartOAuthQuery(c, startReq)
+	defer restoreQuery()
+
+	startedAt := time.Now().UTC()
+	existingIDs := h.providerAuthIDSet(c.Request.Context(), provider)
+	requester := h.oauthRequesterForProxy(startReq.ProxyURL)
+
 	writer := newCaptureWriter(c.Writer, true)
 	c.Writer = writer
 	switch provider {
 	case "anthropic":
-		h.requester.RequestAnthropicToken(c)
+		requester.RequestAnthropicToken(c)
 	case "codex":
-		h.requester.RequestCodexToken(c)
+		requester.RequestCodexToken(c)
 	case "gemini":
-		h.requester.RequestGeminiCLIToken(c)
+		requester.RequestGeminiCLIToken(c)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{"error": "unsupported provider"})
 		return
@@ -104,6 +159,7 @@ func (h *Handlers) startOAuth(c *gin.Context) {
 		return
 	}
 	h.setLatestState(c, provider, resp.State)
+	h.setPendingOAuthFlow(provider, resp.State, startReq.ProxyURL, startedAt, existingIDs)
 }
 
 func (h *Handlers) finishOAuth(c *gin.Context) {
@@ -136,7 +192,12 @@ func (h *Handlers) finishOAuth(c *gin.Context) {
 		writeOAuthError(c, err)
 		return
 	}
+	if err := h.applyPendingOAuthProxyURL(c.Request.Context(), provider, state); err != nil {
+		writeOAuthError(c, err)
+		return
+	}
 	h.clearLatestState(c, provider)
+	h.clearPendingOAuthFlow(state)
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -207,22 +268,97 @@ func (h *Handlers) patchAuthProxyURL(c *gin.Context) {
 	}
 
 	next := record.Clone()
-	proxyURL := strings.TrimSpace(req.ProxyURL)
-	next.ProxyURL = proxyURL
-	if next.Metadata == nil {
-		next.Metadata = make(map[string]any)
-	}
-	if proxyURL == "" {
-		delete(next.Metadata, "proxy_url")
-	} else {
-		next.Metadata["proxy_url"] = proxyURL
-	}
+	setAuthProxyURL(next, req.ProxyURL)
 
 	if _, err := h.authStore.Save(c.Request.Context(), next); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update oauth provider"})
 		return
 	}
 	c.JSON(http.StatusOK, publicAuthFile(next))
+}
+
+type startOAuthRequest struct {
+	ProjectID      string `json:"project_id"`
+	ProjectIDCamel string `json:"projectId"`
+	ProxyURL       string `json:"proxy_url"`
+	ProxyURLHyphen string `json:"proxy-url"`
+	ProxyURLCamel  string `json:"proxyURL"`
+}
+
+type pendingOAuthFlow struct {
+	Provider    string
+	ProxyURL    string
+	StartedAt   time.Time
+	ExistingIDs map[string]struct{}
+}
+
+func parseStartOAuthRequest(c *gin.Context) (startOAuthRequest, error) {
+	query := c.Request.URL.Query()
+	req := startOAuthRequest{
+		ProjectID: query.Get("project_id"),
+		ProxyURL:  query.Get("proxy_url"),
+	}
+	if c.Request.Body == nil || c.Request.Body == http.NoBody {
+		req.normalize()
+		return req, nil
+	}
+
+	data, err := io.ReadAll(c.Request.Body)
+	c.Request.Body = io.NopCloser(bytes.NewReader(data))
+	if err != nil {
+		return startOAuthRequest{}, errInvalidBody
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		req.normalize()
+		return req, nil
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return startOAuthRequest{}, errInvalidBody
+	}
+	req.normalize()
+	return req, nil
+}
+
+func (r *startOAuthRequest) normalize() {
+	if r == nil {
+		return
+	}
+	r.ProjectID = firstNonEmpty(r.ProjectID, r.ProjectIDCamel)
+	r.ProxyURL = firstNonEmpty(r.ProxyURL, r.ProxyURLHyphen, r.ProxyURLCamel)
+}
+
+func applyStartOAuthQuery(c *gin.Context, req startOAuthRequest) func() {
+	originalRawQuery := c.Request.URL.RawQuery
+	query := c.Request.URL.Query()
+	if req.ProjectID != "" {
+		query.Set("project_id", req.ProjectID)
+	}
+	c.Request.URL.RawQuery = query.Encode()
+	return func() {
+		c.Request.URL.RawQuery = originalRawQuery
+	}
+}
+
+func (h *Handlers) oauthRequesterForProxy(proxyURL string) sdkapi.ManagementTokenRequester {
+	proxyURL = strings.TrimSpace(proxyURL)
+	if h == nil {
+		return nil
+	}
+	if proxyURL == "" || h.requester == nil || h.authManager == nil {
+		return h.requester
+	}
+
+	h.configMu.Lock()
+	cfg := h.cfg
+	h.configMu.Unlock()
+	if cfg == nil {
+		return h.requester
+	}
+
+	cfgCopy := *cfg
+	cfgCopy.SDKConfig = cfg.SDKConfig
+	cfgCopy.ProxyURL = proxyURL
+	return sdkapi.NewManagementTokenRequester(&cfgCopy, h.authManager)
 }
 
 type finishRequest struct {
@@ -449,6 +585,150 @@ func authMatchesProvider(auth *coreauth.Auth, provider string) bool {
 	}
 	actual := strings.ToLower(strings.TrimSpace(auth.Provider))
 	return actual == fileProviderID(provider)
+}
+
+func (h *Handlers) providerAuthIDSet(ctx context.Context, provider string) map[string]struct{} {
+	records, err := h.authRecords(ctx)
+	if err != nil {
+		return nil
+	}
+	ids := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		if !authMatchesProvider(record, provider) {
+			continue
+		}
+		if id := strings.TrimSpace(record.ID); id != "" {
+			ids[id] = struct{}{}
+		}
+	}
+	return ids
+}
+
+func (h *Handlers) setPendingOAuthFlow(provider, state, proxyURL string, startedAt time.Time, existingIDs map[string]struct{}) {
+	state = strings.TrimSpace(state)
+	if h == nil || state == "" {
+		return
+	}
+	h.mu.Lock()
+	h.pendingOAuthFlows[state] = pendingOAuthFlow{
+		Provider:    provider,
+		ProxyURL:    strings.TrimSpace(proxyURL),
+		StartedAt:   startedAt,
+		ExistingIDs: existingIDs,
+	}
+	h.mu.Unlock()
+}
+
+func (h *Handlers) pendingOAuthFlow(state string) (pendingOAuthFlow, bool) {
+	state = strings.TrimSpace(state)
+	if h == nil || state == "" {
+		return pendingOAuthFlow{}, false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	flow, ok := h.pendingOAuthFlows[state]
+	return flow, ok
+}
+
+func (h *Handlers) clearPendingOAuthFlow(state string) {
+	state = strings.TrimSpace(state)
+	if h == nil || state == "" {
+		return
+	}
+	h.mu.Lock()
+	delete(h.pendingOAuthFlows, state)
+	h.mu.Unlock()
+}
+
+func (h *Handlers) applyPendingOAuthProxyURL(ctx context.Context, provider, state string) error {
+	flow, ok := h.pendingOAuthFlow(state)
+	if !ok || strings.TrimSpace(flow.ProxyURL) == "" {
+		return nil
+	}
+	if flow.Provider != "" && flow.Provider != provider {
+		return nil
+	}
+	if h.authStore == nil {
+		return &oauthHTTPError{StatusCode: http.StatusInternalServerError, Message: "oauth proxy url could not be saved"}
+	}
+
+	record, ok, err := h.findOAuthResultAuth(ctx, provider, flow)
+	if err != nil {
+		return &oauthHTTPError{StatusCode: http.StatusInternalServerError, Message: "failed to find oauth provider"}
+	}
+	if !ok {
+		return &oauthHTTPError{StatusCode: http.StatusInternalServerError, Message: "oauth provider saved but proxy url could not be applied"}
+	}
+
+	next := record.Clone()
+	setAuthProxyURL(next, flow.ProxyURL)
+	if _, err := h.authStore.Save(ctx, next); err != nil {
+		return &oauthHTTPError{StatusCode: http.StatusInternalServerError, Message: "failed to save oauth provider proxy url"}
+	}
+	return nil
+}
+
+func (h *Handlers) findOAuthResultAuth(ctx context.Context, provider string, flow pendingOAuthFlow) (*coreauth.Auth, bool, error) {
+	records, err := h.authRecords(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	newRecords := make([]*coreauth.Auth, 0, 1)
+	updatedRecords := make([]*coreauth.Auth, 0, 1)
+	allRecords := make([]*coreauth.Auth, 0, len(records))
+	for _, record := range records {
+		if !authMatchesProvider(record, provider) {
+			continue
+		}
+		allRecords = append(allRecords, record)
+		if _, existed := flow.ExistingIDs[strings.TrimSpace(record.ID)]; !existed {
+			newRecords = append(newRecords, record)
+			continue
+		}
+		if !flow.StartedAt.IsZero() && !record.UpdatedAt.IsZero() && !record.UpdatedAt.Before(flow.StartedAt) {
+			updatedRecords = append(updatedRecords, record)
+		}
+	}
+	if record := mostRecentAuth(newRecords); record != nil {
+		return record, true, nil
+	}
+	if record := mostRecentAuth(updatedRecords); record != nil {
+		return record, true, nil
+	}
+	if record := mostRecentAuth(allRecords); record != nil {
+		return record, true, nil
+	}
+	return nil, false, nil
+}
+
+func mostRecentAuth(records []*coreauth.Auth) *coreauth.Auth {
+	var selected *coreauth.Auth
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+		if selected == nil || record.UpdatedAt.After(selected.UpdatedAt) {
+			selected = record
+		}
+	}
+	return selected
+}
+
+func setAuthProxyURL(auth *coreauth.Auth, proxyURL string) {
+	if auth == nil {
+		return
+	}
+	proxyURL = strings.TrimSpace(proxyURL)
+	auth.ProxyURL = proxyURL
+	if auth.Metadata == nil {
+		auth.Metadata = make(map[string]any)
+	}
+	if proxyURL == "" {
+		delete(auth.Metadata, "proxy_url")
+		return
+	}
+	auth.Metadata["proxy_url"] = proxyURL
 }
 
 func (h *Handlers) stateKey(c *gin.Context, provider string) string {
