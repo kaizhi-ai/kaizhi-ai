@@ -206,6 +206,7 @@ func main() {
 		WithConfigPath(absConfigPath).
 		WithCoreAuthManager(coreManager).
 		WithServerOptions(
+			api.WithMiddleware(web.APICacheMiddleware()),
 			api.WithMiddleware(web.SPAMiddleware()),
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
 				authHandlers.RegisterRoutes(engine)
