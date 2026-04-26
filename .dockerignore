@@ -1,0 +1,36 @@
+.git
+.github
+.DS_Store
+
+# Local environment and runtime data
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/auths/
+backend/config.yaml
+backend/data/
+
+# Build outputs
+backend/backend
+backend/dist/
+backend/*.test
+backend/*.out
+backend/coverage.out
+backend/web/dist/*
+!backend/web/dist/.gitkeep
+frontend/dist/
+frontend/dist-ssr/
+
+# Dependencies and package manager state
+frontend/node_modules/
+.pnpm-store/
+
+# Editor and logs
+.idea/
+.vscode/
+*.log
+*.swp
+*.swo
