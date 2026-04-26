@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: 1.26.x
+  NODE_VERSION: 24
+  PNPM_VERSION: 10.23.0
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: kaizhi_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kaizhi_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/kaizhi_test?sslmode=disable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: pnpm lint
+
+      - name: Build frontend assets
+        working-directory: frontend
+        run: pnpm build
+
+      - name: Download Go modules
+        working-directory: backend
+        run: go mod download
+
+      - name: Test backend
+        working-directory: backend
+        run: go test ./...
+
+      - name: Package release binaries
+        working-directory: backend
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            package="kaizhi-backend-${GITHUB_REF_NAME}-linux-${arch}"
+            mkdir -p "dist/${package}"
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -trimpath -ldflags "-s -w" -o "dist/${package}/kaizhi-backend" .
+            cp .env.example "dist/${package}/.env.example"
+            tar -C dist -czf "dist/${package}.tar.gz" "${package}"
+            rm -rf "dist/${package}"
+          done
+
+          cd dist
+          sha256sum *.tar.gz > checksums.txt
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            backend/dist/*.tar.gz
+            backend/dist/checksums.txt
