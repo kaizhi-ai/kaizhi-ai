@@ -4,6 +4,7 @@ import {
   clearToken,
   fetchCurrentUser,
   getToken,
+  logoutSession,
   type AuthUser,
 } from "@/lib/auth-client"
 import { AuthContext } from "@/lib/auth-context"
@@ -36,8 +37,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signOut = useCallback(() => {
+    const token = getToken()
     clearToken()
     setUser(null)
+    setLoading(false)
+    void logoutSession(token)
   }, [])
 
   return (

@@ -21,7 +21,7 @@ export function clearToken() {
 
 export async function loginWithEmail(
   email: string,
-  password: string,
+  password: string
 ): Promise<{ error?: { message: string } }> {
   try {
     const res = await fetch("/api/v1/auth/login", {
@@ -59,5 +59,18 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
     return data?.user ?? null
   } catch {
     return null
+  }
+}
+
+export async function logoutSession(token = getToken()): Promise<void> {
+  if (!token) return
+  try {
+    await fetch("/api/v1/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  } catch {
+    // Best-effort: even if the network call fails, the local token is cleared
+    // by the caller so the user is logged out from this device.
   }
 }
