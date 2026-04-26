@@ -184,6 +184,7 @@ export default function ChatPage() {
         onNewChat={handleNewChat}
         onSelectChat={handleSelectChat}
         onDeleteChat={setPendingDelete}
+        onSettings={() => navigate("/settings/api-keys")}
         onSignOut={handleSignOut}
       />
       <SidebarInset className="flex h-dvh min-w-0 flex-col">

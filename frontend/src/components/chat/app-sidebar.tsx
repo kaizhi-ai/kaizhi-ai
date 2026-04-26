@@ -3,6 +3,7 @@ import {
   LogOut,
   MoreHorizontal,
   Plus,
+  Settings,
   Trash2,
 } from "lucide-react"
 
@@ -36,6 +37,7 @@ type AppSidebarProps = {
   onNewChat: () => void
   onSelectChat: (id: string) => void
   onDeleteChat: (chat: ChatSession) => void
+  onSettings: () => void
   onSignOut: () => void
 }
 
@@ -50,6 +52,7 @@ export function AppSidebar({
   onNewChat,
   onSelectChat,
   onDeleteChat,
+  onSettings,
   onSignOut,
 }: AppSidebarProps) {
   const displayName = userEmail?.split("@")[0] || "未登录"
@@ -145,6 +148,10 @@ export function AppSidebar({
                 <ChevronsUpDown className="ml-auto text-muted-foreground group-data-[collapsible=icon]:hidden" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-56">
+                <DropdownMenuItem onClick={onSettings}>
+                  <Settings />
+                  设置
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={onSignOut}>
                   <LogOut />
                   退出登录

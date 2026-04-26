@@ -106,6 +106,35 @@ func (s *Store) RevokeUserKey(ctx context.Context, userID, keyID string) error {
 	return nil
 }
 
+func (s *Store) RenameUserKey(ctx context.Context, userID, keyID, name string) (*APIKey, error) {
+	var key APIKey
+	err := s.db.QueryRow(ctx, `
+		UPDATE api_keys
+		SET name = $3
+		WHERE id = $1 AND user_id = $2 AND kind = $4 AND status <> 'revoked'
+		RETURNING id, user_id, name, kind, key_prefix, key_hash, status, last_used_at, created_at, expires_at, revoked_at
+	`, keyID, userID, name, KindUser).Scan(
+		&key.ID,
+		&key.UserID,
+		&key.Name,
+		&key.Kind,
+		&key.KeyPrefix,
+		&key.KeyHash,
+		&key.Status,
+		nullTimeScanner(&key.LastUsedAt),
+		&key.CreatedAt,
+		nullTimeScanner(&key.ExpiresAt),
+		nullTimeScanner(&key.RevokedAt),
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &key, nil
+}
+
 func (s *Store) RevokeByID(ctx context.Context, keyID string) error {
 	tag, err := s.db.Exec(ctx, `
 		UPDATE api_keys

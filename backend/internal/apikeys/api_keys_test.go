@@ -56,6 +56,68 @@ func TestAPIKeyCreateListAndRevoke(t *testing.T) {
 	if revokeResp.Code != http.StatusNoContent {
 		t.Fatalf("revoke api key status = %d, body = %s", revokeResp.Code, revokeResp.Body.String())
 	}
+
+	listAfterRevokeResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/api-keys", user.AccessToken, nil)
+	if listAfterRevokeResp.Code != http.StatusOK {
+		t.Fatalf("list after revoke status = %d, body = %s", listAfterRevokeResp.Code, listAfterRevokeResp.Body.String())
+	}
+	var listAfterRevokeBody struct {
+		APIKeys []apikeys.APIKey `json:"api_keys"`
+	}
+	testutil.DecodeJSON(t, listAfterRevokeResp, &listAfterRevokeBody)
+	if len(listAfterRevokeBody.APIKeys) != 1 {
+		t.Fatalf("listed api keys after revoke = %d, want 1", len(listAfterRevokeBody.APIKeys))
+	}
+	if listAfterRevokeBody.APIKeys[0].Status != apikeys.StatusRevoked {
+		t.Fatalf("listed api key status after revoke = %q, want %q", listAfterRevokeBody.APIKeys[0].Status, apikeys.StatusRevoked)
+	}
+}
+
+func TestAPIKeyRename(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "rename-key@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "old name")
+
+	renameResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/api-keys/"+createdKey.ID, user.AccessToken, map[string]string{
+		"name": "new name",
+	})
+	if renameResp.Code != http.StatusOK {
+		t.Fatalf("rename api key status = %d, body = %s", renameResp.Code, renameResp.Body.String())
+	}
+	var renamed apikeys.APIKey
+	testutil.DecodeJSON(t, renameResp, &renamed)
+	if renamed.Name != "new name" {
+		t.Fatalf("renamed api key name = %q, want new name", renamed.Name)
+	}
+	if renamed.KeyHash != "" {
+		t.Fatal("renamed api key hash must not be returned in JSON")
+	}
+
+	listResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/api-keys", user.AccessToken, nil)
+	if listResp.Code != http.StatusOK {
+		t.Fatalf("list api keys status = %d, body = %s", listResp.Code, listResp.Body.String())
+	}
+	var listBody struct {
+		APIKeys []apikeys.APIKey `json:"api_keys"`
+	}
+	testutil.DecodeJSON(t, listResp, &listBody)
+	if len(listBody.APIKeys) != 1 || listBody.APIKeys[0].Name != "new name" {
+		t.Fatalf("listed api keys = %+v, want renamed key", listBody.APIKeys)
+	}
+
+	postRenameResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/api-keys/"+createdKey.ID+"/rename", user.AccessToken, map[string]string{
+		"name": "post renamed",
+	})
+	if postRenameResp.Code != http.StatusOK {
+		t.Fatalf("post rename api key status = %d, body = %s", postRenameResp.Code, postRenameResp.Body.String())
+	}
+	var postRenamed apikeys.APIKey
+	testutil.DecodeJSON(t, postRenameResp, &postRenamed)
+	if postRenamed.Name != "post renamed" {
+		t.Fatalf("post renamed api key name = %q, want post renamed", postRenamed.Name)
+	}
 }
 
 func TestAPIKeyCreateNeverExpires(t *testing.T) {

@@ -28,6 +28,8 @@ func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	group.Use(AuthMiddleware(h.apiKeys, h.users))
 	group.GET("", h.list)
 	group.POST("", h.create)
+	group.PATCH("/:id", h.rename)
+	group.POST("/:id/rename", h.rename)
 	group.DELETE("/:id", h.revoke)
 }
 
@@ -73,6 +75,40 @@ func (h *Handlers) create(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, key)
+}
+
+func (h *Handlers) rename(c *gin.Context) {
+	user := CurrentUser(c)
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if len(name) > maxAPIKeyNameLength {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must be at most 128 characters"})
+		return
+	}
+
+	key, err := h.store.RenameUserKey(c.Request.Context(), user.ID, c.Param("id"), name)
+	if err != nil {
+		status := http.StatusInternalServerError
+		message := "failed to rename api key"
+		if errors.Is(err, ErrNotFound) {
+			status = http.StatusNotFound
+			message = "api key not found"
+		}
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+	c.JSON(http.StatusOK, key)
 }
 
 func (h *Handlers) revoke(c *gin.Context) {

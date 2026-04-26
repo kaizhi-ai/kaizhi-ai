@@ -12,6 +12,9 @@ export default function HomePage() {
       <p className="text-muted-foreground">已登录：{user?.email}</p>
       <div className="flex gap-2">
         <Button render={<Link to="/chat" />}>进入聊天</Button>
+        <Button variant="outline" render={<Link to="/settings/api-keys" />}>
+          设置
+        </Button>
         <Button variant="outline" onClick={signOut}>
           退出登录
         </Button>
