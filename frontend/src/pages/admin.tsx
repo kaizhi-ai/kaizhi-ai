@@ -11,7 +11,7 @@ export default function AdminPage() {
   const location = useLocation()
 
   if (location.pathname === "/admin") {
-    return <Navigate to="/admin/oauth-providers" replace />
+    return <Navigate to="/admin/users" replace />
   }
 
   return (

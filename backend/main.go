@@ -21,6 +21,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
 	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
+	"kaizhi/backend/internal/adminusers"
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
@@ -142,6 +143,7 @@ func main() {
 
 	access.RegisterProvider("kaizhi-api-key", apikeys.NewAccessProvider(apiKeyService))
 	authHandlers := auth.NewHandlers(userStore, apiKeyService)
+	adminUserHandlers := adminusers.NewHandlers(userStore, adminusers.NewStore(db), apiKeyService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)
 	usageHandlers := appusage.NewHandlers(usageStore, userStore, apiKeyService)
 	mediaRoot := filepath.Join(defaultDataDirName, defaultMediaDir)
@@ -210,6 +212,7 @@ func main() {
 			api.WithMiddleware(web.SPAMiddleware()),
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
 				authHandlers.RegisterRoutes(engine)
+				adminUserHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
 				chatHandlers.RegisterRoutes(engine)

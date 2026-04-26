@@ -6,6 +6,7 @@ import AdminPage from "@/pages/admin"
 import AdminAPIKeyProviderPage from "@/pages/admin-api-key-provider"
 import AdminOAuthProvidersPage from "@/pages/admin-oauth-providers"
 import AdminOpenAICompatibilityProviderPage from "@/pages/admin-openai-compatibility-provider"
+import AdminUsersPage from "@/pages/admin-users"
 import ChatPage from "@/pages/chat"
 import HomePage from "@/pages/home"
 import LoginPage from "@/pages/login"
@@ -25,6 +26,7 @@ function App() {
         </Route>
         <Route element={<RequireAdmin />}>
           <Route path="/admin" element={<AdminPage />}>
+            <Route path="users" element={<AdminUsersPage />} />
             <Route
               path="api-key-provider"
               element={<AdminAPIKeyProviderPage />}

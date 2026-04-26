@@ -6,6 +6,7 @@ import {
   LogIn,
   LogOut,
   Settings,
+  Users,
 } from "lucide-react"
 import { useLocation, useNavigate } from "react-router-dom"
 
@@ -71,6 +72,16 @@ export function AdminSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip="用户管理"
+                  isActive={location.pathname.startsWith("/admin/users")}
+                  onClick={() => navigate("/admin/users")}
+                >
+                  <Users />
+                  <span>用户管理</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip="API Key Provider"

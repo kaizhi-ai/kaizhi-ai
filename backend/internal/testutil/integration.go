@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"kaizhi/backend/internal/adminusers"
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
@@ -107,6 +108,7 @@ func Setup(t *testing.T) *Env {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	auth.NewHandlers(userStore, apiKeyService).RegisterRoutes(router)
+	adminusers.NewHandlers(userStore, adminusers.NewStore(pool), apiKeyService).RegisterRoutes(router)
 	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore).RegisterRoutes(router)
 	appusage.NewHandlers(usageStore, userStore, apiKeyService).RegisterRoutes(router)
 	chats.NewHandlers(

@@ -4,6 +4,7 @@ import "time"
 
 const (
 	StatusActive = "active"
+	StatusBanned = "banned"
 
 	RoleUser  = "user"
 	RoleAdmin = "admin"

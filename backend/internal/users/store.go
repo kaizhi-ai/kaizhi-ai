@@ -18,6 +18,12 @@ func NewStore(db *pgxpool.Pool) *Store {
 	return &Store{db: db}
 }
 
+type UpdateUserParams struct {
+	Email  *string
+	Role   *string
+	Status *string
+}
+
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*User, error) {
 	return s.CreateUserWithRole(ctx, email, passwordHash, RoleUser)
 }
@@ -53,6 +59,36 @@ func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, rol
 		return nil, err
 	}
 	return &user, nil
+}
+
+func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, email, password_hash, status, role, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	users := make([]User, 0)
+	for rows.Next() {
+		var user User
+		if err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.PasswordHash,
+			&user.Status,
+			&user.Role,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, rows.Err()
 }
 
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
@@ -92,6 +128,64 @@ func (s *Store) UpdatePasswordHash(ctx context.Context, id, passwordHash string)
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserParams) (*User, error) {
+	if params.Email == nil && params.Role == nil && params.Status == nil {
+		return s.GetUserByID(ctx, id)
+	}
+
+	var email any
+	if params.Email != nil {
+		normalized := NormalizeEmail(*params.Email)
+		email = normalized
+	}
+	var role any
+	if params.Role != nil {
+		nextRole := RoleUser
+		if *params.Role == RoleAdmin {
+			nextRole = RoleAdmin
+		}
+		role = nextRole
+	}
+	var status any
+	if params.Status != nil {
+		nextStatus := StatusActive
+		if *params.Status == StatusBanned {
+			nextStatus = StatusBanned
+		}
+		status = nextStatus
+	}
+
+	var user User
+	err := s.db.QueryRow(ctx, `
+		UPDATE users
+		SET email = COALESCE($2, email),
+		    role = COALESCE($3, role),
+		    status = COALESCE($4, status),
+		    updated_at = now()
+		WHERE id = $1
+		RETURNING id, email, password_hash, status, role, created_at, updated_at
+	`, id, email, role, status).Scan(
+		&user.ID,
+		&user.Email,
+		&user.PasswordHash,
+		&user.Status,
+		&user.Role,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrEmailExists
+		}
+		return nil, err
+	}
+	return &user, nil
 }
 
 func (s *Store) UpdateRole(ctx context.Context, id, role string) error {
