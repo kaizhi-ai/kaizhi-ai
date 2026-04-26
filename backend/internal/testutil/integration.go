@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"kaizhi/backend/internal/apikeys"
+	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/ids"
 	"kaizhi/backend/internal/postgres"
@@ -29,7 +30,6 @@ type Env struct {
 	UsageStore  *appusage.Store
 	ChatStore   *chats.Store
 	APIKeys     *apikeys.Service
-	Tokens      *users.TokenService
 	Router      *gin.Engine
 	Cleanup     func()
 }
@@ -40,6 +40,10 @@ type AuthResponse struct {
 		ID    string `json:"id"`
 		Email string `json:"email"`
 	} `json:"user"`
+	// SessionKeyID is populated by SeedUser only, since the login response does
+	// not surface the underlying api_key id. Tests that need to bind usage
+	// events to the session key use it.
+	SessionKeyID string `json:"-"`
 }
 
 func Setup(t *testing.T) *Env {
@@ -92,13 +96,6 @@ func Setup(t *testing.T) *Env {
 	apiKeyStore := apikeys.NewStore(pool)
 	usageStore := appusage.NewStore(pool)
 	chatStore := chats.NewStore(pool)
-	tokens, err := users.NewTokenService("integration-test-jwt-secret")
-	if err != nil {
-		pool.Close()
-		_, _ = adminPool.Exec(ctx, "DROP SCHEMA "+quotedSchema+" CASCADE")
-		adminPool.Close()
-		t.Fatalf("create token service: %v", err)
-	}
 	apiKeyService, err := apikeys.NewService(apiKeyStore, "integration-test-api-key-pepper")
 	if err != nil {
 		pool.Close()
@@ -109,10 +106,10 @@ func Setup(t *testing.T) *Env {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	users.NewHandlers(userStore, tokens).RegisterRoutes(router)
-	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore, tokens).RegisterRoutes(router)
-	appusage.NewHandlers(usageStore, userStore, tokens).RegisterRoutes(router)
-	chats.NewHandlers(chatStore, userStore, tokens).RegisterRoutes(router)
+	auth.NewHandlers(userStore, apiKeyService).RegisterRoutes(router)
+	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore).RegisterRoutes(router)
+	appusage.NewHandlers(usageStore, userStore, apiKeyService).RegisterRoutes(router)
+	chats.NewHandlers(chatStore, userStore, apiKeyService).RegisterRoutes(router)
 
 	cleanup := func() {
 		pool.Close()
@@ -125,15 +122,14 @@ func Setup(t *testing.T) *Env {
 		UsageStore:  usageStore,
 		ChatStore:   chatStore,
 		APIKeys:     apiKeyService,
-		Tokens:      tokens,
 		Router:      router,
 		Cleanup:     cleanup,
 	}
 }
 
-// SeedUser inserts a user directly through the store and returns a signed
-// access token. There is no public registration endpoint, so tests that need
-// an authenticated caller use this helper instead of an HTTP round-trip.
+// SeedUser inserts a user directly through the store and returns a fresh
+// session API key. There is no public registration endpoint, so tests that
+// need an authenticated caller use this helper instead of an HTTP round-trip.
 func SeedUser(t *testing.T, env *Env, email, password string) AuthResponse {
 	t.Helper()
 	hash, err := users.HashPassword(password)
@@ -144,12 +140,13 @@ func SeedUser(t *testing.T, env *Env, email, password string) AuthResponse {
 	if err != nil {
 		t.Fatalf("create user: %v", err)
 	}
-	token, _, err := env.Tokens.Sign(user)
+	session, err := env.APIKeys.IssueSession(context.Background(), user.ID)
 	if err != nil {
-		t.Fatalf("sign token: %v", err)
+		t.Fatalf("issue session: %v", err)
 	}
 	var body AuthResponse
-	body.AccessToken = token
+	body.AccessToken = session.Key
+	body.SessionKeyID = session.ID
 	body.User.ID = user.ID
 	body.User.Email = user.Email
 	return body

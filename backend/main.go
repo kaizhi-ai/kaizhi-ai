@@ -18,12 +18,22 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"kaizhi/backend/internal/apikeys"
+	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/postgres"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
 	"kaizhi/backend/web"
 )
+
+const defaultCLIProxyConfig = `host: "127.0.0.1"
+port: 8317
+auth-dir: "auths"
+api-keys: []
+remote-management:
+  allow-remote: false
+  secret-key: ""
+`
 
 func main() {
 	_ = godotenv.Load()
@@ -37,6 +47,14 @@ func main() {
 	absConfigPath, err := filepath.Abs(*configPath)
 	if err != nil {
 		log.Fatalf("resolve config path: %v", err)
+	}
+
+	if _, err := os.Stat(absConfigPath); os.IsNotExist(err) {
+		if err := os.WriteFile(absConfigPath, []byte(defaultCLIProxyConfig), 0o600); err != nil {
+			log.Fatalf("write default config: %v", err)
+		}
+	} else if err != nil {
+		log.Fatalf("stat config: %v", err)
 	}
 
 	db, err := postgres.Open(ctx, os.Getenv("DATABASE_URL"))
@@ -66,21 +84,16 @@ func main() {
 	usageStore := appusage.NewStore(db)
 	chatStore := chats.NewStore(db)
 
-	tokenService, err := users.NewTokenService(os.Getenv("JWT_SECRET"))
-	if err != nil {
-		log.Fatalf("configure token service: %v", err)
-	}
-
 	apiKeyService, err := apikeys.NewService(apiKeyStore, os.Getenv("API_KEY_PEPPER"))
 	if err != nil {
 		log.Fatalf("configure api key service: %v", err)
 	}
 
 	access.RegisterProvider("kaizhi-api-key", apikeys.NewAccessProvider(apiKeyService))
-	userHandlers := users.NewHandlers(userStore, tokenService)
-	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore, tokenService)
-	usageHandlers := appusage.NewHandlers(usageStore, userStore, tokenService)
-	chatHandlers := chats.NewHandlers(chatStore, userStore, tokenService)
+	authHandlers := auth.NewHandlers(userStore, apiKeyService)
+	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)
+	usageHandlers := appusage.NewHandlers(usageStore, userStore, apiKeyService)
+	chatHandlers := chats.NewHandlers(chatStore, userStore, apiKeyService)
 
 	cfg, err := config.LoadConfig(absConfigPath)
 	if err != nil {
@@ -93,7 +106,7 @@ func main() {
 		WithServerOptions(
 			api.WithMiddleware(web.SPAMiddleware()),
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
-				userHandlers.RegisterRoutes(engine)
+				authHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
 				chatHandlers.RegisterRoutes(engine)

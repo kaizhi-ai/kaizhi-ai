@@ -7,29 +7,30 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/users"
 )
 
 type Handlers struct {
-	store  *Store
-	users  *users.Store
-	tokens *users.TokenService
+	store   *Store
+	users   *users.Store
+	apiKeys *apikeys.Service
 }
 
-func NewHandlers(store *Store, userStore *users.Store, tokens *users.TokenService) *Handlers {
-	return &Handlers{store: store, users: userStore, tokens: tokens}
+func NewHandlers(store *Store, userStore *users.Store, apiKeys *apikeys.Service) *Handlers {
+	return &Handlers{store: store, users: userStore, apiKeys: apiKeys}
 }
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	group := engine.Group("/api/v1/usage")
-	group.Use(users.AuthMiddleware(h.users, h.tokens))
+	group.Use(apikeys.AuthMiddleware(h.apiKeys, h.users))
 	group.GET("", h.summary)
 	group.GET("/api-keys", h.byAPIKey)
 	group.GET("/models", h.byModel)
 }
 
 func (h *Handlers) summary(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -44,7 +45,7 @@ func (h *Handlers) summary(c *gin.Context) {
 }
 
 func (h *Handlers) byAPIKey(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -59,7 +60,7 @@ func (h *Handlers) byAPIKey(c *gin.Context) {
 }
 
 func (h *Handlers) byModel(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

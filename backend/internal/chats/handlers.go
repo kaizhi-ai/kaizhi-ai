@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/ids"
 	"kaizhi/backend/internal/users"
 )
@@ -24,18 +25,18 @@ var allowedRoles = map[string]struct{}{
 }
 
 type Handlers struct {
-	store  *Store
-	users  *users.Store
-	tokens *users.TokenService
+	store   *Store
+	users   *users.Store
+	apiKeys *apikeys.Service
 }
 
-func NewHandlers(store *Store, userStore *users.Store, tokens *users.TokenService) *Handlers {
-	return &Handlers{store: store, users: userStore, tokens: tokens}
+func NewHandlers(store *Store, userStore *users.Store, apiKeys *apikeys.Service) *Handlers {
+	return &Handlers{store: store, users: userStore, apiKeys: apiKeys}
 }
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	group := engine.Group("/api/v1/chats")
-	group.Use(users.AuthMiddleware(h.users, h.tokens))
+	group.Use(apikeys.AuthMiddleware(h.apiKeys, h.users))
 	group.POST("", h.create)
 	group.GET("", h.list)
 	group.PATCH("/:id", h.rename)
@@ -45,7 +46,7 @@ func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 }
 
 func (h *Handlers) create(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	var req struct {
 		Title string `json:"title"`
 	}
@@ -76,7 +77,7 @@ func (h *Handlers) create(c *gin.Context) {
 }
 
 func (h *Handlers) list(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	sessions, err := h.store.ListChatSessions(c.Request.Context(), user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list chats"})
@@ -86,7 +87,7 @@ func (h *Handlers) list(c *gin.Context) {
 }
 
 func (h *Handlers) rename(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	var req struct {
 		Title string `json:"title"`
 	}
@@ -112,7 +113,7 @@ func (h *Handlers) rename(c *gin.Context) {
 }
 
 func (h *Handlers) delete(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	if err := h.store.DeleteChatSession(c.Request.Context(), user.ID, c.Param("id")); err != nil {
 		respondStoreError(c, err, "failed to delete chat")
 		return
@@ -121,7 +122,7 @@ func (h *Handlers) delete(c *gin.Context) {
 }
 
 func (h *Handlers) listMessages(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	messages, err := h.store.ListChatMessages(c.Request.Context(), user.ID, c.Param("id"))
 	if err != nil {
 		respondStoreError(c, err, "failed to list messages")
@@ -131,7 +132,7 @@ func (h *Handlers) listMessages(c *gin.Context) {
 }
 
 func (h *Handlers) appendMessage(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := apikeys.CurrentUser(c)
 	var req struct {
 		Role  string          `json:"role"`
 		Parts json.RawMessage `json:"parts"`

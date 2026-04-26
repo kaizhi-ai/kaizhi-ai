@@ -2,6 +2,8 @@ package users
 
 import "time"
 
+const StatusActive = "active"
+
 type User struct {
 	ID           string    `json:"id"`
 	Email        string    `json:"email"`

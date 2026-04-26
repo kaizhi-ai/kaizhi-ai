@@ -6,12 +6,14 @@ This repository currently contains a Go backend and an empty frontend placeholde
 
 - `backend/`: Go module `kaizhi/backend`.
 - `backend/main.go`: application entrypoint; embeds `CLIProxyAPI` and wires custom user, API key, and usage modules.
-- `backend/internal/users/`: user registration, login, JWT, password hashing, and user storage.
-- `backend/internal/apikeys/`: user API key creation, revocation, hashing, and `cliproxy` access provider.
+- `backend/internal/users/`: user CRUD, password hashing, and admin bootstrap.
+- `backend/internal/auth/`: login/logout/me handlers and the API key Bearer middleware.
+- `backend/internal/apikeys/`: user-managed and session API keys, hashing, expiry, and `cliproxy` access provider.
 - `backend/internal/usage/`: usage recording plugin and usage query endpoints.
+- `backend/internal/chats/`: chat session and message storage with HTTP handlers.
 - `backend/internal/postgres/`: PostgreSQL connection and schema initialization.
 - `backend/internal/testutil/`: shared integration test setup.
-- `backend/config.yaml`: `cliproxy` runtime configuration.
+- `backend/config.yaml`: auto-generated `cliproxy` runtime configuration (recreated on first run if missing).
 - `backend/.env.example`: local environment variable template.
 
 Runtime data such as `backend/auths/`, `backend/.env`, and the compiled `backend/backend` binary must stay untracked.
@@ -59,7 +61,7 @@ Use short, package-oriented names: `users`, `apikeys`, `usage`, `postgres`. Keep
 
 Tests use Go’s standard `testing` package plus `httptest`. Test files live next to the package they cover, for example:
 
-- `internal/users/auth_test.go`
+- `internal/auth/auth_test.go`
 - `internal/apikeys/api_keys_test.go`
 - `internal/usage/usage_test.go`
 
@@ -81,8 +83,9 @@ Do not commit `.env`, generated auth files, or compiled binaries. Required backe
 
 ```bash
 DATABASE_URL=postgres://...
-JWT_SECRET=...
 API_KEY_PEPPER=...
 ```
+
+Authentication uses opaque API keys end to end. Login mints a `kind='session'` key with an initial 7-day expiry that slides forward by 24 hours when used near expiry; the web client uses it both for account management / chat / usage APIs and for in-app model calls through the CLIProxy access provider. `kind='user'` keys are created in the API keys UI for external/programmatic clients (scripts, SDKs); they carry an optional `expires_at` (default 90 days) and are accepted only by the CLIProxy access provider, not by the account management / chat / usage APIs. The `/api/v1/usage/api-keys` breakdown lists only `kind='user'` keys — model traffic from the web chat (session keys) is rolled into the totals at `/api/v1/usage` but does not appear as its own row.
 
 Use `MANAGEMENT_PASSWORD` only for administrator access to `cliproxy` management APIs. Production should keep `api-keys: []` in `config.yaml` so all model traffic goes through user-owned API keys and usage tracking.

@@ -36,3 +36,15 @@ func HashAPIKey(pepper, rawKey string) (string, error) {
 	_, _ = mac.Write([]byte(rawKey))
 	return hex.EncodeToString(mac.Sum(nil)), nil
 }
+
+func ExtractBearer(authHeader string) string {
+	authHeader = strings.TrimSpace(authHeader)
+	if authHeader == "" {
+		return ""
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
+}

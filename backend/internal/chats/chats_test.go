@@ -144,6 +144,23 @@ func TestChatsRequireUserToken(t *testing.T) {
 	}
 }
 
+func TestChatsRejectUserAPIKey(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "chat-user-key@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "model traffic only")
+
+	listResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/chats", createdKey.Key, nil)
+	if listResp.Code != http.StatusUnauthorized {
+		t.Fatalf("list chats with user api key status = %d, want 401", listResp.Code)
+	}
+	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", createdKey.Key, map[string]string{"title": "blocked"})
+	if createResp.Code != http.StatusUnauthorized {
+		t.Fatalf("create chat with user api key status = %d, want 401", createResp.Code)
+	}
+}
+
 func TestChatsAreIsolatedPerUser(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()

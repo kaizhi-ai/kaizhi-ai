@@ -55,12 +55,56 @@ func TestUsageEndpoints(t *testing.T) {
 	}
 }
 
-func TestUsageRequiresUserToken(t *testing.T) {
+func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	// SeedUser issues a session key under the hood. Recording usage against it
+	// proves the session row is excluded from the per-api-key breakdown — chat
+	// traffic is summed in /api/v1/usage but never appears as its own row.
+	user := testutil.SeedUser(t, env, "session-usage@example.com", "password123")
+	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, user.SessionKeyID)
+	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")
+	to := requestedAt.AddDate(0, 0, 1).Format("2006-01-02")
+
+	usageResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage?from="+from+"&to="+to, user.AccessToken, nil)
+	if usageResp.Code != http.StatusOK {
+		t.Fatalf("usage status = %d, body = %s", usageResp.Code, usageResp.Body.String())
+	}
+	var usageBody struct {
+		Usage appusage.Summary `json:"usage"`
+	}
+	testutil.DecodeJSON(t, usageResp, &usageBody)
+	if usageBody.Usage.RequestCount != 1 || usageBody.Usage.TotalTokens != 33 {
+		t.Fatalf("usage summary = %+v, want 1 request and 33 tokens", usageBody.Usage)
+	}
+
+	byKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
+	if byKeyResp.Code != http.StatusOK {
+		t.Fatalf("usage by key status = %d, body = %s", byKeyResp.Code, byKeyResp.Body.String())
+	}
+	var byKeyBody struct {
+		APIKeys []appusage.APIKeyUsage `json:"api_keys"`
+	}
+	testutil.DecodeJSON(t, byKeyResp, &byKeyBody)
+	if len(byKeyBody.APIKeys) != 0 {
+		t.Fatalf("usage by key = %+v, want session key hidden", byKeyBody.APIKeys)
+	}
+}
+
+func TestUsageRequiresSessionToken(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
 	resp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage", "", nil)
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("usage without token status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	user := testutil.SeedUser(t, env, "usage-user-key@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "model traffic only")
+	userKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage", createdKey.Key, nil)
+	if userKeyResp.Code != http.StatusUnauthorized {
+		t.Fatalf("usage with user api key status = %d, want 401", userKeyResp.Code)
 	}
 }

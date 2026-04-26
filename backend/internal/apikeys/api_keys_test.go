@@ -1,9 +1,12 @@
 package apikeys_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/testutil"
@@ -17,6 +20,12 @@ func TestAPIKeyCreateListAndRevoke(t *testing.T) {
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "integration key")
 	if createdKey.ID == "" || createdKey.UserID != user.User.ID {
 		t.Fatalf("created api key = %+v, want id and user id", createdKey)
+	}
+	if createdKey.Kind != apikeys.KindUser {
+		t.Fatalf("created kind = %q, want %q", createdKey.Kind, apikeys.KindUser)
+	}
+	if createdKey.ExpiresAt == nil {
+		t.Fatal("expected default expires_at to be set (90 days)")
 	}
 	if !strings.HasPrefix(createdKey.Key, "kz_live_") {
 		t.Fatalf("created raw api key = %q, want kz_live_ prefix", createdKey.Key)
@@ -34,7 +43,7 @@ func TestAPIKeyCreateListAndRevoke(t *testing.T) {
 	}
 	testutil.DecodeJSON(t, listKeysResp, &listKeysBody)
 	if len(listKeysBody.APIKeys) != 1 {
-		t.Fatalf("listed api keys = %d, want 1", len(listKeysBody.APIKeys))
+		t.Fatalf("listed api keys = %d, want 1 (session key must be hidden)", len(listKeysBody.APIKeys))
 	}
 	if listKeysBody.APIKeys[0].ID != createdKey.ID {
 		t.Fatalf("listed api key id = %q, want %q", listKeysBody.APIKeys[0].ID, createdKey.ID)
@@ -49,7 +58,100 @@ func TestAPIKeyCreateListAndRevoke(t *testing.T) {
 	}
 }
 
-func TestAPIKeysRequireUserToken(t *testing.T) {
+func TestAPIKeyCreateNeverExpires(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "never@example.com", "password123")
+	resp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/api-keys", user.AccessToken, map[string]string{
+		"name":       "no-expiry",
+		"expires_in": "never",
+	})
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create api key status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	var created apikeys.CreatedAPIKey
+	testutil.DecodeJSON(t, resp, &created)
+	if created.ExpiresAt != nil {
+		t.Fatalf("expires_at = %v, want nil for never", created.ExpiresAt)
+	}
+}
+
+func TestAPIKeyCreateRejectsInvalidExpiresIn(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "bad-expiry@example.com", "password123")
+	resp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/api-keys", user.AccessToken, map[string]string{
+		"expires_in": "forever",
+	})
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.Code)
+	}
+}
+
+func TestAPIKeyAuthenticateRejectsExpired(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "expired@example.com", "password123")
+	created, err := env.APIKeys.CreateUserKey(context.Background(), user.User.ID, apikeys.CreateUserKeyOptions{
+		Name:      "soon",
+		ExpiresAt: timePtr(time.Now().UTC().AddDate(0, 0, 1)),
+	})
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	if _, err := env.APIKeys.Authenticate(context.Background(), created.Key); err != nil {
+		t.Fatalf("authenticate before expiry: %v", err)
+	}
+
+	if err := env.APIKeyStore.SetExpiresAt(context.Background(), created.ID, timePtr(time.Now().UTC().Add(-time.Minute))); err != nil {
+		t.Fatalf("force expiry: %v", err)
+	}
+
+	_, err = env.APIKeys.Authenticate(context.Background(), created.Key)
+	if !errors.Is(err, apikeys.ErrExpired) {
+		t.Fatalf("authenticate after expiry err = %v, want ErrExpired", err)
+	}
+}
+
+func TestSessionKeyExpirySlidesOnUse(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "slide@example.com", "password123")
+	original, err := env.APIKeyStore.GetByID(context.Background(), user.SessionKeyID)
+	if err != nil {
+		t.Fatalf("load session key: %v", err)
+	}
+	if original.ExpiresAt == nil {
+		t.Fatal("session key must have expires_at")
+	}
+
+	// Force expires_at into the past relative to "after extension" so we can
+	// see the sliding window push it forward. We push it to now+1h, then call
+	// Authenticate, and assert it moved out toward now+24h.
+	near := time.Now().UTC().Add(time.Hour)
+	if err := env.APIKeyStore.SetExpiresAt(context.Background(), original.ID, &near); err != nil {
+		t.Fatalf("seed near expiry: %v", err)
+	}
+
+	if _, err := env.APIKeys.Authenticate(context.Background(), user.AccessToken); err != nil {
+		t.Fatalf("authenticate session: %v", err)
+	}
+
+	updated, err := env.APIKeyStore.GetByID(context.Background(), original.ID)
+	if err != nil {
+		t.Fatalf("reload session key: %v", err)
+	}
+	if updated.ExpiresAt == nil || !updated.ExpiresAt.After(near.Add(time.Hour)) {
+		t.Fatalf("expires_at = %v, want pushed past %v", updated.ExpiresAt, near.Add(time.Hour))
+	}
+}
+
+func TestAPIKeysRequireSessionToken(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
@@ -62,4 +164,13 @@ func TestAPIKeysRequireUserToken(t *testing.T) {
 	if createResp.Code != http.StatusUnauthorized {
 		t.Fatalf("create without token status = %d, body = %s", createResp.Code, createResp.Body.String())
 	}
+
+	user := testutil.SeedUser(t, env, "user-key-blocked@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "model traffic only")
+	userKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/api-keys", createdKey.Key, nil)
+	if userKeyResp.Code != http.StatusUnauthorized {
+		t.Fatalf("list with user api key status = %d, want 401", userKeyResp.Code)
+	}
 }
+
+func timePtr(t time.Time) *time.Time { return &t }

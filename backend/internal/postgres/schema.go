@@ -31,17 +31,23 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	id TEXT PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	name TEXT NOT NULL,
+	kind TEXT NOT NULL DEFAULT 'user',
 	key_prefix TEXT NOT NULL,
 	key_hash TEXT NOT NULL UNIQUE,
 	status TEXT NOT NULL DEFAULT 'active',
 	last_used_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	expires_at TIMESTAMPTZ,
 	revoked_at TIMESTAMPTZ
 );
+
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS api_keys_user_id_idx ON api_keys(user_id);
 CREATE INDEX IF NOT EXISTS api_keys_status_idx ON api_keys(status);
 CREATE INDEX IF NOT EXISTS api_keys_key_prefix_idx ON api_keys(key_prefix);
+CREATE INDEX IF NOT EXISTS api_keys_user_kind_idx ON api_keys(user_id, kind);
 
 CREATE TABLE IF NOT EXISTS usage_events (
 	id TEXT PRIMARY KEY,

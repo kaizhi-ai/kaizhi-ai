@@ -4,6 +4,9 @@
 # Runtime auth state
 /auths/
 
+# Runtime CLIProxyAPI config (generated from default template at startup)
+/config.yaml
+
 # Go test artifacts
 *.test
 *.out

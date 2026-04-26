@@ -132,7 +132,7 @@ func (s *Store) GetByAPIKey(ctx context.Context, userID string, from, to time.Ti
 		FROM api_keys ak
 		LEFT JOIN usage_daily ud ON ud.api_key_id = ak.id
 			AND ud.day >= $2 AND ud.day <= $3
-		WHERE ak.user_id = $1
+		WHERE ak.user_id = $1 AND ak.kind = 'user'
 		GROUP BY ak.id, ak.name, ak.key_prefix
 		ORDER BY COALESCE(SUM(ud.total_tokens), 0) DESC, ak.created_at DESC
 	`, userID, from.Format("2006-01-02"), to.Format("2006-01-02"))

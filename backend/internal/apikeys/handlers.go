@@ -2,8 +2,10 @@ package apikeys
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"kaizhi/backend/internal/users"
@@ -15,24 +17,23 @@ type Handlers struct {
 	store   *Store
 	apiKeys *Service
 	users   *users.Store
-	tokens  *users.TokenService
 }
 
-func NewHandlers(store *Store, apiKeys *Service, userStore *users.Store, tokens *users.TokenService) *Handlers {
-	return &Handlers{store: store, apiKeys: apiKeys, users: userStore, tokens: tokens}
+func NewHandlers(store *Store, apiKeys *Service, userStore *users.Store) *Handlers {
+	return &Handlers{store: store, apiKeys: apiKeys, users: userStore}
 }
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	group := engine.Group("/api/v1/api-keys")
-	group.Use(users.AuthMiddleware(h.users, h.tokens))
+	group.Use(AuthMiddleware(h.apiKeys, h.users))
 	group.GET("", h.list)
 	group.POST("", h.create)
 	group.DELETE("/:id", h.revoke)
 }
 
 func (h *Handlers) list(c *gin.Context) {
-	user := users.CurrentUser(c)
-	keys, err := h.store.ListByUser(c.Request.Context(), user.ID)
+	user := CurrentUser(c)
+	keys, err := h.store.ListUserKeys(c.Request.Context(), user.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list api keys"})
 		return
@@ -41,11 +42,12 @@ func (h *Handlers) list(c *gin.Context) {
 }
 
 func (h *Handlers) create(c *gin.Context) {
-	user := users.CurrentUser(c)
+	user := CurrentUser(c)
 	var req struct {
-		Name string `json:"name"`
+		Name      string  `json:"name"`
+		ExpiresIn *string `json:"expires_in"` // "30d", "90d", "365d", "never"; default "90d"
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
@@ -56,7 +58,16 @@ func (h *Handlers) create(c *gin.Context) {
 		return
 	}
 
-	key, err := h.apiKeys.Create(c.Request.Context(), user.ID, name)
+	expiresAt, err := parseExpiresIn(req.ExpiresIn)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	key, err := h.apiKeys.CreateUserKey(c.Request.Context(), user.ID, CreateUserKeyOptions{
+		Name:      name,
+		ExpiresAt: expiresAt,
+	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create api key"})
 		return
@@ -65,8 +76,8 @@ func (h *Handlers) create(c *gin.Context) {
 }
 
 func (h *Handlers) revoke(c *gin.Context) {
-	user := users.CurrentUser(c)
-	if err := h.store.Revoke(c.Request.Context(), user.ID, c.Param("id")); err != nil {
+	user := CurrentUser(c)
+	if err := h.store.RevokeUserKey(c.Request.Context(), user.ID, c.Param("id")); err != nil {
 		status := http.StatusInternalServerError
 		message := "failed to revoke api key"
 		if errors.Is(err, ErrNotFound) {
@@ -77,4 +88,24 @@ func (h *Handlers) revoke(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func parseExpiresIn(raw *string) (*time.Time, error) {
+	value := "90d"
+	if raw != nil {
+		value = strings.TrimSpace(*raw)
+	}
+	if value == "" {
+		value = "90d"
+	}
+	if value == "never" {
+		return nil, nil
+	}
+	days := map[string]int{"30d": 30, "90d": 90, "365d": 365}
+	n, ok := days[value]
+	if !ok {
+		return nil, errors.New("expires_in must be one of 30d, 90d, 365d, never")
+	}
+	t := time.Now().UTC().AddDate(0, 0, n)
+	return &t, nil
 }
