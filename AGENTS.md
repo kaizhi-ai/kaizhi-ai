@@ -87,5 +87,3 @@ API_KEY_PEPPER=...
 ```
 
 Authentication uses opaque API keys end to end. Login mints a `kind='session'` key with an initial 7-day expiry that slides forward by 24 hours when used near expiry; the web client uses it both for account management / chat / usage APIs and for in-app model calls through the CLIProxy access provider. `kind='user'` keys are created in the API keys UI for external/programmatic clients (scripts, SDKs); they carry an optional `expires_at` (default 90 days) and are accepted only by the CLIProxy access provider, not by the account management / chat / usage APIs. The `/api/v1/usage/api-keys` breakdown lists only `kind='user'` keys — model traffic from the web chat (session keys) is rolled into the totals at `/api/v1/usage` but does not appear as its own row.
-
-Use `MANAGEMENT_PASSWORD` only for administrator access to `cliproxy` management APIs. Production should keep `api-keys: []` in `config.yaml` so all model traffic goes through user-owned API keys and usage tracking.

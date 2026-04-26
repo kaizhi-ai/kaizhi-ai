@@ -4,6 +4,9 @@
 # Runtime auth state
 /auths/
 
+# Runtime data directory when KAIZHI_DATA_DIR=./data
+/data/
+
 # Runtime CLIProxyAPI config (generated from default template at startup)
 /config.yaml
 

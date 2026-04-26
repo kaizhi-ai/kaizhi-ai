@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -29,31 +31,68 @@ import (
 	"kaizhi/backend/web"
 )
 
-const defaultCLIProxyConfig = `host: "127.0.0.1"
+const (
+	kaizhiDataDirEnv   = "KAIZHI_DATA_DIR"
+	defaultConfigName  = "config.yaml"
+	defaultAuthDirName = "auths"
+)
+
+func defaultCLIProxyConfig(authDir string) string {
+	authDir = strings.TrimSpace(authDir)
+	if authDir == "" {
+		authDir = defaultAuthDirName
+	}
+	return `host: "127.0.0.1"
 port: 8317
-auth-dir: "auths"
+auth-dir: ` + strconv.Quote(filepath.ToSlash(authDir)) + `
 api-keys: []
 remote-management:
   allow-remote: false
   secret-key: ""
 `
+}
 
 func main() {
 	_ = godotenv.Load()
 
-	configPath := flag.String("config", "config.yaml", "path to CLIProxyAPI config file")
+	dataDir, dataDirConfigured, err := resolveKaizhiDataDir()
+	if err != nil {
+		log.Fatalf("resolve %s: %v", kaizhiDataDirEnv, err)
+	}
+	if dataDirConfigured {
+		if err := os.MkdirAll(dataDir, 0o700); err != nil {
+			log.Fatalf("create %s: %v", kaizhiDataDirEnv, err)
+		}
+	}
+
+	defaultConfigPath := defaultConfigName
+	if dataDirConfigured {
+		defaultConfigPath = filepath.Join(dataDir, defaultConfigName)
+	}
+	configPath := flag.String("config", defaultConfigPath, "path to CLIProxyAPI config file")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	absConfigPath, err := filepath.Abs(*configPath)
+	resolvedConfigPath, err := expandPath(*configPath)
+	if err != nil {
+		log.Fatalf("resolve config path: %v", err)
+	}
+	absConfigPath, err := filepath.Abs(resolvedConfigPath)
 	if err != nil {
 		log.Fatalf("resolve config path: %v", err)
 	}
 
 	if _, err := os.Stat(absConfigPath); os.IsNotExist(err) {
-		if err := os.WriteFile(absConfigPath, []byte(defaultCLIProxyConfig), 0o600); err != nil {
+		if err := os.MkdirAll(filepath.Dir(absConfigPath), 0o700); err != nil {
+			log.Fatalf("create config directory: %v", err)
+		}
+		defaultAuthDir := defaultAuthDirName
+		if dataDirConfigured {
+			defaultAuthDir = filepath.Join(dataDir, defaultAuthDirName)
+		}
+		if err := os.WriteFile(absConfigPath, []byte(defaultCLIProxyConfig(defaultAuthDir)), 0o600); err != nil {
 			log.Fatalf("write default config: %v", err)
 		}
 	} else if err != nil {
@@ -106,6 +145,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	if dataDirConfigured {
+		cfg.AuthDir, err = resolveDataDirPath(cfg.AuthDir, dataDir, defaultAuthDirName)
+		if err != nil {
+			log.Fatalf("resolve auth-dir: %v", err)
+		}
+		if err := os.MkdirAll(cfg.AuthDir, 0o700); err != nil {
+			log.Fatalf("create auth-dir: %v", err)
+		}
+	}
 
 	tokenStore := sdkauth.GetTokenStore()
 	if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok {
@@ -147,4 +195,50 @@ func main() {
 	if err := svc.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("run CLIProxyAPI service: %v", err)
 	}
+}
+
+func resolveKaizhiDataDir() (string, bool, error) {
+	raw := strings.TrimSpace(os.Getenv(kaizhiDataDirEnv))
+	if raw == "" {
+		return "", false, nil
+	}
+	path, err := expandPath(raw)
+	if err != nil {
+		return "", true, err
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", true, err
+	}
+	return filepath.Clean(abs), true, nil
+}
+
+func resolveDataDirPath(path, dataDir, fallback string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = fallback
+	}
+	path, err := expandPath(path)
+	if err != nil {
+		return "", err
+	}
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path), nil
+	}
+	return filepath.Join(dataDir, path), nil
+}
+
+func expandPath(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "~" {
+		return os.UserHomeDir()
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, strings.TrimPrefix(path, "~/")), nil
+	}
+	return path, nil
 }
