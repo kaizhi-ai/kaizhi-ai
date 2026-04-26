@@ -42,6 +42,17 @@ func AuthMiddleware(svc *Service, userStore *users.Store) gin.HandlerFunc {
 	}
 }
 
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := CurrentUser(c)
+		if user == nil || user.Role != users.RoleAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "admin access required"})
+			return
+		}
+		c.Next()
+	}
+}
+
 func CurrentUser(c *gin.Context) *users.User {
 	if value, exists := c.Get(contextKeyUser); exists {
 		if user, ok := value.(*users.User); ok {

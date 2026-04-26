@@ -13,6 +13,8 @@ const (
 	AdminUnchanged AdminAction = iota
 	AdminCreated
 	AdminPasswordUpdated
+	AdminRoleUpdated
+	AdminUpdated
 )
 
 // EnsureAdmin makes the database state match the supplied credentials. If the
@@ -38,22 +40,37 @@ func EnsureAdmin(ctx context.Context, store *Store, email, password string) (Adm
 		if err != nil {
 			return AdminUnchanged, err
 		}
-		if _, err := store.CreateUser(ctx, email, hash); err != nil {
+		if _, err := store.CreateUserWithRole(ctx, email, hash, RoleAdmin); err != nil {
 			return AdminUnchanged, err
 		}
 		return AdminCreated, nil
 	}
 
-	if VerifyPassword(existing.PasswordHash, password) {
+	passwordMatches := VerifyPassword(existing.PasswordHash, password)
+	roleMatches := existing.Role == RoleAdmin
+	if passwordMatches && roleMatches {
 		return AdminUnchanged, nil
 	}
 
-	hash, err := HashPassword(password)
-	if err != nil {
-		return AdminUnchanged, err
+	if !passwordMatches {
+		hash, err := HashPassword(password)
+		if err != nil {
+			return AdminUnchanged, err
+		}
+		if err := store.UpdatePasswordHash(ctx, existing.ID, hash); err != nil {
+			return AdminUnchanged, err
+		}
 	}
-	if err := store.UpdatePasswordHash(ctx, existing.ID, hash); err != nil {
-		return AdminUnchanged, err
+	if !roleMatches {
+		if err := store.UpdateRole(ctx, existing.ID, RoleAdmin); err != nil {
+			return AdminUnchanged, err
+		}
 	}
-	return AdminPasswordUpdated, nil
+	if !passwordMatches && !roleMatches {
+		return AdminUpdated, nil
+	}
+	if !passwordMatches {
+		return AdminPasswordUpdated, nil
+	}
+	return AdminRoleUpdated, nil
 }

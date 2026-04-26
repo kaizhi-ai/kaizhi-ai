@@ -77,6 +77,7 @@ func publicUser(user *users.User) gin.H {
 		"id":         user.ID,
 		"email":      user.Email,
 		"status":     user.Status,
+		"role":       user.Role,
 		"created_at": user.CreatedAt,
 	}
 }

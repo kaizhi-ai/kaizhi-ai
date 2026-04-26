@@ -3,9 +3,9 @@ import {
   ChevronsUpDown,
   KeyRound,
   LogOut,
-  Shield,
+  Settings,
 } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -28,8 +28,9 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 
-export function SettingsSidebar() {
+export function AdminSidebar() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, signOut } = useAuth()
   const displayName = user?.email?.split("@")[0] || "未登录"
   const initial = (user?.email || "?").charAt(0).toUpperCase()
@@ -44,7 +45,7 @@ export function SettingsSidebar() {
       <SidebarHeader>
         <div className="flex items-center justify-between gap-2 overflow-hidden px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <span className="truncate text-sm font-semibold whitespace-nowrap group-data-[collapsible=icon]:hidden">
-            设置
+            后台管理
           </span>
           <SidebarTrigger className="shrink-0" />
         </div>
@@ -70,12 +71,14 @@ export function SettingsSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="API Keys"
-                  isActive
-                  onClick={() => navigate("/settings/api-keys")}
+                  tooltip="OAuth Provider"
+                  isActive={location.pathname.startsWith(
+                    "/admin/oauth-providers"
+                  )}
+                  onClick={() => navigate("/admin/oauth-providers")}
                 >
                   <KeyRound />
-                  <span>API Keys</span>
+                  <span>OAuth Provider</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -111,12 +114,12 @@ export function SettingsSidebar() {
                 <ChevronsUpDown className="ml-auto text-muted-foreground group-data-[collapsible=icon]:hidden" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-56">
-                {user?.role === "admin" && (
-                  <DropdownMenuItem onClick={() => navigate("/admin")}>
-                    <Shield />
-                    后台管理
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem
+                  onClick={() => navigate("/settings/api-keys")}
+                >
+                  <Settings />
+                  设置
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut />
                   退出登录

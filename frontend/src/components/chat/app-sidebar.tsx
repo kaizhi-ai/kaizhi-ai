@@ -4,6 +4,7 @@ import {
   MoreHorizontal,
   Plus,
   Settings,
+  Shield,
   Trash2,
 } from "lucide-react"
 
@@ -38,7 +39,9 @@ type AppSidebarProps = {
   onSelectChat: (id: string) => void
   onDeleteChat: (chat: ChatSession) => void
   onSettings: () => void
+  onAdmin?: () => void
   onSignOut: () => void
+  isAdmin?: boolean
 }
 
 function displayTitle(chat: ChatSession) {
@@ -53,7 +56,9 @@ export function AppSidebar({
   onSelectChat,
   onDeleteChat,
   onSettings,
+  onAdmin,
   onSignOut,
+  isAdmin = false,
 }: AppSidebarProps) {
   const displayName = userEmail?.split("@")[0] || "未登录"
   const initial = (userEmail || "?").charAt(0).toUpperCase()
@@ -152,6 +157,12 @@ export function AppSidebar({
                   <Settings />
                   设置
                 </DropdownMenuItem>
+                {isAdmin && onAdmin && (
+                  <DropdownMenuItem onClick={onAdmin}>
+                    <Shield />
+                    后台管理
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={onSignOut}>
                   <LogOut />
                   退出登录

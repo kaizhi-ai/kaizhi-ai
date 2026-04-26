@@ -15,12 +15,15 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/api"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/api/handlers"
+	sdkauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy"
+	coreauth "github.com/router-for-me/CLIProxyAPI/v6/sdk/cliproxy/auth"
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/postgres"
+	"kaizhi/backend/internal/provider"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
 	"kaizhi/backend/web"
@@ -78,6 +81,10 @@ func main() {
 			log.Printf("created admin user %s from ADMIN_EMAIL/ADMIN_PASSWORD", adminEmail)
 		case users.AdminPasswordUpdated:
 			log.Printf("updated admin user %s password from ADMIN_PASSWORD", adminEmail)
+		case users.AdminRoleUpdated:
+			log.Printf("promoted admin user %s from ADMIN_EMAIL", adminEmail)
+		case users.AdminUpdated:
+			log.Printf("updated admin user %s password and role from ADMIN_EMAIL/ADMIN_PASSWORD", adminEmail)
 		}
 	}
 	apiKeyStore := apikeys.NewStore(db)
@@ -100,9 +107,23 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
+	tokenStore := sdkauth.GetTokenStore()
+	if dirSetter, ok := tokenStore.(interface{ SetBaseDir(string) }); ok {
+		dirSetter.SetBaseDir(cfg.AuthDir)
+	}
+	coreManager := coreauth.NewManager(tokenStore, nil, nil)
+	providerOAuthHandlers := provider.NewHandlers(
+		apiKeyService,
+		userStore,
+		api.NewManagementTokenRequester(cfg, coreManager),
+		tokenStore,
+		coreManager,
+	)
+
 	svc, err := cliproxy.NewBuilder().
 		WithConfig(cfg).
 		WithConfigPath(absConfigPath).
+		WithCoreAuthManager(coreManager).
 		WithServerOptions(
 			api.WithMiddleware(web.SPAMiddleware()),
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
@@ -110,6 +131,7 @@ func main() {
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
 				chatHandlers.RegisterRoutes(engine)
+				providerOAuthHandlers.RegisterRoutes(engine)
 				engine.NoRoute(web.NoRouteHandler())
 			}),
 		).

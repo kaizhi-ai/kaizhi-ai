@@ -21,11 +21,15 @@ CREATE TABLE IF NOT EXISTS users (
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	status TEXT NOT NULL DEFAULT 'active',
+	role TEXT NOT NULL DEFAULT 'user',
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+
 CREATE INDEX IF NOT EXISTS users_status_idx ON users(status);
+CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
 
 CREATE TABLE IF NOT EXISTS api_keys (
 	id TEXT PRIMARY KEY,

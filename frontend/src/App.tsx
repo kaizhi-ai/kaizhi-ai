@@ -1,6 +1,9 @@
 import { Route, Routes } from "react-router-dom"
 
+import RequireAdmin from "@/components/require-admin"
 import RequireAuth from "@/components/require-auth"
+import AdminPage from "@/pages/admin"
+import AdminOAuthProvidersPage from "@/pages/admin-oauth-providers"
 import ChatPage from "@/pages/chat"
 import HomePage from "@/pages/home"
 import LoginPage from "@/pages/login"
@@ -17,6 +20,14 @@ function App() {
         <Route path="/chat/:id" element={<ChatPage />} />
         <Route path="/settings" element={<SettingsPage />}>
           <Route path="api-keys" element={<SettingsAPIKeysPage />} />
+        </Route>
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin" element={<AdminPage />}>
+            <Route
+              path="oauth-providers"
+              element={<AdminOAuthProvidersPage />}
+            />
+          </Route>
         </Route>
       </Route>
     </Routes>

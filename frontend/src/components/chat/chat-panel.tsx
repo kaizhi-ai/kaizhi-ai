@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { createOpenAI } from "@ai-sdk/openai"
+import {
+  createOpenAI,
+  type OpenAILanguageModelResponsesOptions,
+} from "@ai-sdk/openai"
 import { useChat } from "@ai-sdk/react"
 import { convertToModelMessages, streamText } from "ai"
 import type { ChatTransport, UIMessage } from "ai"
@@ -125,6 +128,11 @@ export function ChatPanel({
           model: openai.responses(CHAT_MODEL),
           messages: await convertToModelMessages(messages),
           abortSignal,
+          providerOptions: {
+            openai: {
+              store: false,
+            } satisfies OpenAILanguageModelResponsesOptions,
+          },
         })
 
         return result.toUIMessageStream({

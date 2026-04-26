@@ -19,21 +19,29 @@ func NewStore(db *pgxpool.Pool) *Store {
 }
 
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*User, error) {
+	return s.CreateUserWithRole(ctx, email, passwordHash, RoleUser)
+}
+
+func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, role string) (*User, error) {
 	id, err := ids.New("usr")
 	if err != nil {
 		return nil, err
 	}
+	if role != RoleAdmin {
+		role = RoleUser
+	}
 
 	var user User
 	err = s.db.QueryRow(ctx, `
-		INSERT INTO users (id, email, password_hash)
-		VALUES ($1, $2, $3)
-		RETURNING id, email, password_hash, status, created_at, updated_at
-	`, id, NormalizeEmail(email), passwordHash).Scan(
+		INSERT INTO users (id, email, password_hash, role)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, email, password_hash, status, role, created_at, updated_at
+	`, id, NormalizeEmail(email), passwordHash, role).Scan(
 		&user.ID,
 		&user.Email,
 		&user.PasswordHash,
 		&user.Status,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -50,7 +58,7 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*Us
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, status, created_at, updated_at
+		SELECT id, email, password_hash, status, role, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`, NormalizeEmail(email)).Scan(
@@ -58,6 +66,7 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 		&user.Email,
 		&user.PasswordHash,
 		&user.Status,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -85,10 +94,28 @@ func (s *Store) UpdatePasswordHash(ctx context.Context, id, passwordHash string)
 	return nil
 }
 
+func (s *Store) UpdateRole(ctx context.Context, id, role string) error {
+	if role != RoleAdmin {
+		role = RoleUser
+	}
+	tag, err := s.db.Exec(ctx, `
+		UPDATE users
+		SET role = $1, updated_at = now()
+		WHERE id = $2
+	`, role, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, status, created_at, updated_at
+		SELECT id, email, password_hash, status, role, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`, id).Scan(
@@ -96,6 +123,7 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 		&user.Email,
 		&user.PasswordHash,
 		&user.Status,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

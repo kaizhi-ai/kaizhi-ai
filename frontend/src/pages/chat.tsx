@@ -185,7 +185,9 @@ export default function ChatPage() {
         onSelectChat={handleSelectChat}
         onDeleteChat={setPendingDelete}
         onSettings={() => navigate("/settings/api-keys")}
+        onAdmin={() => navigate("/admin")}
         onSignOut={handleSignOut}
+        isAdmin={user?.role === "admin"}
       />
       <SidebarInset className="flex h-dvh min-w-0 flex-col">
         <ChatHeader title={loadingChats ? "加载中…" : headerTitle} />
