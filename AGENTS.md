@@ -1,89 +1,75 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Purpose
 
-This repository currently contains a Go backend and an empty frontend placeholder.
+Kaizhi is a multi-purpose AI platform for teams. A single service combines web chat, account management, user-issued API keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), provider management (OAuth / API key / OpenAI-compatible), usage tracking, and an embedded xray-core proxy. The Go backend embeds CLIProxyAPI as the unified model entrypoint and serves the built React SPA from a single binary.
 
-- `backend/`: Go module `kaizhi/backend`.
-- `backend/main.go`: application entrypoint; embeds `CLIProxyAPI` and wires custom user, API key, and usage modules.
-- `backend/internal/users/`: user CRUD, password hashing, and admin bootstrap.
-- `backend/internal/auth/`: login/logout/me handlers and the API key Bearer middleware.
-- `backend/internal/apikeys/`: user-managed and session API keys, hashing, expiry, and `cliproxy` access provider.
-- `backend/internal/usage/`: usage recording plugin and usage query endpoints.
-- `backend/internal/chats/`: chat session and message storage with HTTP handlers.
-- `backend/internal/postgres/`: PostgreSQL connection and schema initialization.
-- `backend/internal/testutil/`: shared integration test setup.
-- `backend/config.yaml`: auto-generated `cliproxy` runtime configuration (recreated on first run if missing).
-- `backend/.env.example`: local environment variable template.
+## Tech Stack
 
-Runtime data such as `backend/auths/`, `backend/.env`, and the compiled `backend/backend` binary must stay untracked.
+- **Backend**: Go (module `kaizhi/backend`), embeds CLIProxyAPI as the unified model entrypoint, PostgreSQL for persistence, embedded xray-core for upstream proxy support.
+- **Frontend**: Vite + React 19 + TypeScript + Tailwind 4, with shadcn/ui and prompt-kit components; Vercel AI SDK (`ai`, `@ai-sdk/react`, `@ai-sdk/openai`) for chat streaming. `pnpm build` writes the SPA bundle to `backend/web/dist`, which is embedded into the Go binary through `backend/web/`.
+- **Packaging**: single Go binary serving both the API and the SPA; multi-stage `Dockerfile` builds frontend then backend.
 
 ## Build, Test, and Development Commands
 
-Run commands from `backend/` unless noted otherwise.
+Backend commands run from `backend/` unless noted; frontend commands run from `frontend/`.
 
 ```bash
+# backend: run with .env; runtime data lives under backend/data/
 go run .
-```
 
-Starts the backend using `config.yaml` and variables from `.env`.
-
-```bash
+# backend: compile all packages
 go build ./...
-```
 
-Compiles all backend packages.
-
-```bash
+# backend: run all tests (PostgreSQL tests skip without TEST_DATABASE_URL)
 go test ./...
-```
 
-Runs all tests. PostgreSQL tests skip unless `TEST_DATABASE_URL` is set.
-
-```bash
+# backend: PostgreSQL-backed integration tests
 set -a; source .env; set +a
-TEST_DATABASE_URL="$DATABASE_URL" go test ./internal/apikeys ./internal/users ./internal/usage -count=1 -v
+TEST_DATABASE_URL="$DATABASE_URL" go test ./... -count=1 -v
+
+# frontend: dev server, production build, lint, format
+pnpm dev
+pnpm build
+pnpm lint
+pnpm format
 ```
 
-Runs PostgreSQL-backed integration tests against a temporary schema.
+The production binary embeds `backend/web/dist`, so run `pnpm build` from `frontend/` before `go build` from `backend/` when shipping.
+
+Tests use Go's standard `testing` package plus `httptest`, colocated with the package they cover, named by behavior (e.g. `TestAuthRejectsWrongPassword`). PostgreSQL-backed tests must create isolated schemas through `internal/testutil` and clean them up.
 
 ## Coding Style & Naming Conventions
 
-Use standard Go formatting. Run `gofmt` before committing:
+Go: standard formatting via `go fmt ./...`. Use short, package-oriented names (`users`, `apikeys`, `usage`, `postgres`, `provider`, `xrayproxy`). Keep HTTP handlers, stores, services, and providers in their owning package. Avoid mixing API key, usage, or provider logic back into `users`.
 
-```bash
-gofmt -w main.go internal/**/*.go
-```
-
-Use short, package-oriented names: `users`, `apikeys`, `usage`, `postgres`. Keep HTTP handlers, stores, services, and providers in their owning package. Avoid mixing API key or usage logic back into `users`.
-
-## Testing Guidelines
-
-Tests use Go’s standard `testing` package plus `httptest`. Test files live next to the package they cover, for example:
-
-- `internal/auth/auth_test.go`
-- `internal/apikeys/api_keys_test.go`
-- `internal/usage/usage_test.go`
-
-Name tests by behavior, such as `TestAuthRejectsWrongPassword` or `TestAPIKeysRequireUserToken`. PostgreSQL tests must create isolated schemas through `internal/testutil` and clean them up.
+Frontend: TypeScript + React 19 with Prettier (`pnpm format`) and ESLint (`pnpm lint`). UI components live under `src/components/ui` (Radix/Base UI primitives); feature components are colocated by area (`chat`, `settings`, `admin`).
 
 ## Commit & Pull Request Guidelines
 
-The current history uses concise imperative commit messages, for example `Add CLIProxy backend`. Prefer messages like:
+Use [Conventional Commits](https://www.conventionalcommits.org/): `<type>(<scope>)?: <subject>`. Keep the subject in lowercase imperative mood, under ~72 chars. Common types:
 
-- `Add user API key store`
-- `Split usage handlers`
-- `Fix auth token validation`
+- `feat`: user-facing feature (`feat(apikeys): add user-managed key store`)
+- `fix`: bug fix (`fix(auth): reject expired session keys`)
+- `refactor`: code change without behavior change (`refactor(usage): split handlers`)
+- `docs`, `test`, `chore`, `build`, `ci`, `perf`, `style`
+
+Use scopes that match package or area names (`apikeys`, `provider`, `chat`, `frontend`, `docker`). Append `!` after the type/scope for breaking changes (`feat(apikeys)!: change key format`).
 
 Pull requests should include a brief summary, test commands run, configuration changes, and any API route changes. Include screenshots only for frontend changes.
 
 ## Security & Configuration Tips
 
-Do not commit `.env`, generated auth files, or compiled binaries. Required backend variables are:
+Never commit `.env`, `backend/data/`, generated data-dir contents, or compiled binaries. See `backend/.env.example` for required variables.
 
-```bash
-DATABASE_URL=postgres://...
-API_KEY_PEPPER=...
-```
+API key boundaries (don't break these):
 
-Authentication uses opaque API keys end to end. Login mints a `kind='session'` key with an initial 7-day expiry that slides forward by 24 hours when used near expiry; the web client uses it both for account management / chat / usage APIs and for in-app model calls through the CLIProxy access provider. `kind='user'` keys are created in the API keys UI for external/programmatic clients (scripts, SDKs); they carry an optional `expires_at` (default 90 days) and are accepted only by the CLIProxy access provider, not by the account management / chat / usage APIs. The `/api/v1/usage/api-keys` breakdown lists only `kind='user'` keys — model traffic from the web chat (session keys) is rolled into the totals at `/api/v1/usage` but does not appear as its own row.
+- `kind='session'` keys (minted at login, 7-day sliding expiry) are accepted by both account/chat/usage APIs and the CLIProxy model entrypoint.
+- `kind='user'` keys (created in the API keys UI, for external clients) are accepted **only** by the CLIProxy access provider — never by account/chat/usage APIs.
+- `/api/v1/usage/api-keys` lists only `user` keys; web chat (session) traffic is rolled into `/api/v1/usage` totals without its own row.
+
+## References
+
+- shadcn/ui: https://ui.shadcn.com/llms.txt
+- prompt-kit: https://www.prompt-kit.com/llms.txt
+- Vercel AI SDK: https://ai-sdk.dev/llms.txt
