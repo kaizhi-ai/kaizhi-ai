@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth-context"
@@ -28,6 +29,7 @@ import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatPanel } from "@/components/chat/chat-panel"
 
 export default function ChatPage() {
+  const { t } = useTranslation()
   const params = useParams()
   const activeChatId = params.id
   const navigate = useNavigate()
@@ -53,7 +55,9 @@ export default function ChatPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "加载对话失败")
+          setError(
+            err instanceof Error ? err.message : t("errors.loadChatsFailed")
+          )
         }
       })
       .finally(() => {
@@ -62,7 +66,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +96,11 @@ export default function ChatPage() {
           if (!cancelled) {
             setMessages([])
             setMessagesChatId(undefined)
-            setError(err instanceof Error ? err.message : "加载消息失败")
+            setError(
+              err instanceof Error
+                ? err.message
+                : t("errors.loadMessagesFailed")
+            )
           }
         })
         .finally(() => {
@@ -102,7 +110,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true
     }
-  }, [activeChatId])
+  }, [activeChatId, t])
 
   const activeChat = useMemo(
     () => chats.find((chat) => chat.id === activeChatId),
@@ -110,8 +118,8 @@ export default function ChatPage() {
   )
 
   const headerTitle = activeChatId
-    ? (activeChat?.title.trim() ?? "对话")
-    : "新对话"
+    ? activeChat?.title.trim() || t("chat.title")
+    : t("chat.newChat")
 
   const uiMessages = useMemo(() => {
     if (!activeChatId || messagesChatId !== activeChatId) return []
@@ -164,7 +172,9 @@ export default function ChatPage() {
       }
       setPendingDelete(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除对话失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.deleteChatFailed")
+      )
     } finally {
       setDeleting(false)
     }
@@ -191,7 +201,7 @@ export default function ChatPage() {
         isAdmin={user?.role === "admin"}
       />
       <SidebarInset className="flex h-dvh min-w-0 flex-col">
-        <ChatHeader title={loadingChats ? "加载中…" : headerTitle} />
+        <ChatHeader title={loadingChats ? t("common.loading") : headerTitle} />
         <ChatPanel
           chatId={activeChatId}
           initialMessages={uiMessages}
@@ -212,20 +222,23 @@ export default function ChatPage() {
       >
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>删除该对话？</AlertDialogTitle>
+            <AlertDialogTitle>{t("chat.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              “{pendingDelete?.title.trim() || "新对话"}”
-              及其全部消息将被永久删除，无法恢复。
+              {t("chat.deleteDescription", {
+                title: pendingDelete?.title.trim() || t("chat.newChat"),
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleting}
               onClick={() => void confirmDelete()}
             >
-              {deleting ? "删除中…" : "删除"}
+              {deleting ? t("common.deleting") : t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

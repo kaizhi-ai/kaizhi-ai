@@ -8,6 +8,7 @@ import {
   type AuthUser,
 } from "@/lib/auth-client"
 import { AuthContext } from "@/lib/auth-context"
+import i18n, { setStoredLanguage, supportedLanguage } from "@/lib/i18n"
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -27,7 +28,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    document.documentElement.lang = user?.language || "zh-CN"
+    const language = user?.language
+      ? supportedLanguage(user.language)
+      : supportedLanguage(i18n.language)
+    if (user?.language) setStoredLanguage(language)
+    void i18n.changeLanguage(language)
   }, [user?.language])
 
   const refresh = useCallback(async () => {

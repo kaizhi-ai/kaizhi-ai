@@ -6,6 +6,7 @@ import {
   Settings,
   Shield,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth-context"
@@ -30,11 +31,12 @@ import {
 } from "@/components/ui/sidebar"
 
 export function SettingsSidebar() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const { user, signOut } = useAuth()
   const displayName =
-    user?.name?.trim() || user?.email?.split("@")[0] || "未登录"
+    user?.name?.trim() || user?.email?.split("@")[0] || t("nav.notSignedIn")
   const initial = (displayName || user?.email || "?").charAt(0).toUpperCase()
 
   function handleSignOut() {
@@ -47,7 +49,7 @@ export function SettingsSidebar() {
       <SidebarHeader>
         <div className="flex items-center justify-between gap-2 overflow-hidden px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <span className="truncate text-sm font-semibold whitespace-nowrap group-data-[collapsible=icon]:hidden">
-            设置
+            {t("nav.settings")}
           </span>
           <SidebarTrigger className="shrink-0" />
         </div>
@@ -58,11 +60,11 @@ export function SettingsSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="返回聊天"
+                  tooltip={t("nav.backToChat")}
                   onClick={() => navigate("/chat")}
                 >
                   <ArrowLeft />
-                  <span>返回聊天</span>
+                  <span>{t("nav.backToChat")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -73,22 +75,22 @@ export function SettingsSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="通用"
+                  tooltip={t("nav.general")}
                   isActive={location.pathname.startsWith("/settings/general")}
                   onClick={() => navigate("/settings/general")}
                 >
                   <Settings />
-                  <span>通用</span>
+                  <span>{t("nav.general")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  tooltip="API Keys"
+                  tooltip={t("nav.apiKeys")}
                   isActive={location.pathname.startsWith("/settings/api-keys")}
                   onClick={() => navigate("/settings/api-keys")}
                 >
                   <KeyRound />
-                  <span>API Keys</span>
+                  <span>{t("nav.apiKeys")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
@@ -102,7 +104,7 @@ export function SettingsSidebar() {
               <DropdownMenuTrigger
                 render={
                   <SidebarMenuButton
-                    tooltip={user?.email ?? "未登录"}
+                    tooltip={user?.email ?? t("nav.notSignedIn")}
                     size="lg"
                     className="h-16 rounded-none px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:!px-0"
                   />
@@ -127,12 +129,12 @@ export function SettingsSidebar() {
                 {user?.role === "admin" && (
                   <DropdownMenuItem onClick={() => navigate("/admin")}>
                     <Shield />
-                    后台管理
+                    {t("nav.admin")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={handleSignOut}>
                   <LogOut />
-                  退出登录
+                  {t("nav.signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

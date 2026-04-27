@@ -9,16 +9,16 @@ export function proxyURLFromEnabled(enabled: boolean) {
   return enabled ? "" : DIRECT_PROXY_URL
 }
 
-export function proxyStatusLabel(value?: string | null) {
-  return proxyEnabledFromURL(value) ? "开启" : "直连"
+export function proxyStatusKey(value?: string | null) {
+  return proxyEnabledFromURL(value) ? "enabled" : "direct"
 }
 
-export function proxySummaryLabel(
+export function proxySummaryKey(
   values: Array<string | null | undefined>,
   fallback?: string | null
 ) {
   const source = values.length > 0 ? values : [fallback]
-  const unique = Array.from(new Set(source.map(proxyStatusLabel)))
+  const unique = Array.from(new Set(source.map(proxyStatusKey)))
   if (unique.length === 1) return unique[0]
-  return "混合"
+  return "mixed"
 }

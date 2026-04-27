@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next"
+
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -15,6 +17,7 @@ export function ProxySwitchField({
   onCheckedChange,
   className,
 }: ProxySwitchFieldProps) {
+  const { t } = useTranslation()
   return (
     <div
       className={cn(
@@ -23,16 +26,16 @@ export function ProxySwitchField({
       )}
     >
       <Label htmlFor={id} className="min-w-0 cursor-pointer">
-        使用代理
+        {t("proxy.useProxy")}
         <span className="block text-xs font-normal text-muted-foreground">
-          开启走全局代理，关闭直连
+          {t("proxy.fieldDescription")}
         </span>
       </Label>
       <Switch
         id={id}
         checked={checked}
         onCheckedChange={onCheckedChange}
-        aria-label="使用代理"
+        aria-label={t("proxy.useProxy")}
       />
     </div>
   )

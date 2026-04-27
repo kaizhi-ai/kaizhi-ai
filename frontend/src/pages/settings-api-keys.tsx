@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import {
   createAPIKey,
@@ -53,24 +54,11 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-const dateFmt = new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-const expiryOptions: Array<{ value: APIKeyExpiry; label: string }> = [
-  { value: "30d", label: "30 天" },
-  { value: "90d", label: "90 天" },
-  { value: "365d", label: "365 天" },
-  { value: "never", label: "永不过期" },
-]
+const expiryOptions: APIKeyExpiry[] = ["30d", "90d", "365d", "never"]
 
 type KeyFilter = "active" | "expired" | "revoked"
 
-function formatDate(value?: string) {
+function formatDate(value: string | undefined, dateFmt: Intl.DateTimeFormat) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "-"
@@ -85,10 +73,10 @@ function isExpiredKey(key: APIKey) {
   )
 }
 
-function statusLabel(key: APIKey) {
-  if (key.status === "revoked") return "已撤销"
-  if (isExpiredKey(key)) return "已过期"
-  return "有效"
+function statusKey(key: APIKey): KeyFilter {
+  if (key.status === "revoked") return "revoked"
+  if (isExpiredKey(key)) return "expired"
+  return "active"
 }
 
 function keyDisplay(key: APIKey) {
@@ -96,12 +84,22 @@ function keyDisplay(key: APIKey) {
 }
 
 function matchesFilter(key: APIKey, filter: KeyFilter) {
-  if (filter === "active") return statusLabel(key) === "有效"
-  if (filter === "expired") return statusLabel(key) === "已过期"
-  return statusLabel(key) === "已撤销"
+  return statusKey(key) === filter
 }
 
 export default function SettingsAPIKeysPage() {
+  const { t, i18n } = useTranslation()
+  const dateFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(i18n.language, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [i18n.language]
+  )
   const [keys, setKeys] = useState<APIKey[]>([])
   const [filter, setFilter] = useState<KeyFilter>("active")
   const [loading, setLoading] = useState(true)
@@ -119,7 +117,9 @@ export default function SettingsAPIKeysPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "加载 API Keys 失败")
+          setError(
+            err instanceof Error ? err.message : t("errors.loadAPIKeysFailed")
+          )
         }
       })
       .finally(() => {
@@ -128,7 +128,7 @@ export default function SettingsAPIKeysPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const filteredKeys = useMemo(
     () => keys.filter((key) => matchesFilter(key, filter)),
@@ -154,7 +154,9 @@ export default function SettingsAPIKeysPage() {
       )
       setRevokeTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "撤销 API Key 失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.revokeAPIKeyFailed")
+      )
     } finally {
       setRevoking(false)
     }
@@ -163,11 +165,10 @@ export default function SettingsAPIKeysPage() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3">
-        <h1 className="text-xl font-semibold">API Keys</h1>
+        <h1 className="text-xl font-semibold">{t("apiKeys.title")}</h1>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <p className="max-w-2xl text-sm text-muted-foreground">
-            用于外部 CLI、SDK 或脚本通过当前网关访问模型服务。已创建的 Key
-            只会显示前缀；新 Key 创建后请立即复制保存。
+            {t("apiKeys.description")}
           </p>
         </div>
       </div>
@@ -184,9 +185,9 @@ export default function SettingsAPIKeysPage() {
           onValueChange={(value) => setFilter(value as KeyFilter)}
         >
           <TabsList>
-            <TabsTrigger value="active">有效</TabsTrigger>
-            <TabsTrigger value="expired">已过期</TabsTrigger>
-            <TabsTrigger value="revoked">已撤销</TabsTrigger>
+            <TabsTrigger value="active">{t("apiKeys.active")}</TabsTrigger>
+            <TabsTrigger value="expired">{t("apiKeys.expired")}</TabsTrigger>
+            <TabsTrigger value="revoked">{t("apiKeys.revoked")}</TabsTrigger>
           </TabsList>
         </Tabs>
         <Button
@@ -195,7 +196,7 @@ export default function SettingsAPIKeysPage() {
           onClick={() => setCreateOpen(true)}
         >
           <Plus />
-          创建 API Key
+          {t("apiKeys.createTitle")}
         </Button>
       </div>
 
@@ -203,11 +204,17 @@ export default function SettingsAPIKeysPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-40">名称</TableHead>
-              <TableHead className="min-w-44">Key</TableHead>
-              <TableHead className="min-w-36">过期时间</TableHead>
-              <TableHead className="min-w-36">最近使用</TableHead>
-              <TableHead className="min-w-36">创建时间</TableHead>
+              <TableHead className="min-w-40">{t("common.name")}</TableHead>
+              <TableHead className="min-w-44">{t("apiKeys.key")}</TableHead>
+              <TableHead className="min-w-36">
+                {t("apiKeys.expiresAt")}
+              </TableHead>
+              <TableHead className="min-w-36">
+                {t("apiKeys.lastUsedAt")}
+              </TableHead>
+              <TableHead className="min-w-36">
+                {t("common.createdAt")}
+              </TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -218,7 +225,7 @@ export default function SettingsAPIKeysPage() {
                   colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  加载中…
+                  {t("common.loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -227,6 +234,7 @@ export default function SettingsAPIKeysPage() {
                 <KeyRow
                   key={key.id}
                   apiKey={key}
+                  dateFmt={dateFmt}
                   onRename={() => setRenameTarget(key)}
                   onRevoke={() => setRevokeTarget(key)}
                 />
@@ -237,7 +245,7 @@ export default function SettingsAPIKeysPage() {
                   colSpan={6}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  暂无 API Key
+                  {t("apiKeys.noKeys")}
                 </TableCell>
               </TableRow>
             )}
@@ -272,19 +280,25 @@ export default function SettingsAPIKeysPage() {
       >
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>撤销该 API Key？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("apiKeys.revokeConfirmTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              “{revokeTarget?.name ?? ""}” 撤销后不能再用于模型访问。
+              {t("apiKeys.revokeConfirmDescription", {
+                name: revokeTarget?.name ?? "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revoking}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={revoking}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={revoking}
               onClick={() => void confirmRevoke()}
             >
-              {revoking ? "撤销中…" : "撤销"}
+              {revoking ? t("common.revoking") : t("common.revoke")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -295,13 +309,16 @@ export default function SettingsAPIKeysPage() {
 
 function KeyRow({
   apiKey,
+  dateFmt,
   onRename,
   onRevoke,
 }: {
   apiKey: APIKey
+  dateFmt: Intl.DateTimeFormat
   onRename: () => void
   onRevoke: () => void
 }) {
+  const { t } = useTranslation()
   const revoked = apiKey.status === "revoked"
 
   return (
@@ -315,26 +332,32 @@ function KeyRow({
         </code>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {apiKey.expires_at ? formatDate(apiKey.expires_at) : "永不过期"}
+        {apiKey.expires_at
+          ? formatDate(apiKey.expires_at, dateFmt)
+          : t("apiKeys.neverExpires")}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {formatDate(apiKey.last_used_at)}
+        {formatDate(apiKey.last_used_at, dateFmt)}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {formatDate(apiKey.created_at)}
+        {formatDate(apiKey.created_at, dateFmt)}
       </TableCell>
       <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button variant="ghost" size="icon-sm" aria-label="更多操作" />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("common.moreActions")}
+              />
             }
           >
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem disabled={revoked} onClick={onRename}>
-              重命名
+              {t("common.rename")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -343,7 +366,7 @@ function KeyRow({
               onClick={onRevoke}
             >
               <Trash2 />
-              撤销
+              {t("common.revoke")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -361,6 +384,7 @@ function RenameKeyDialog({
   onOpenChange: (open: boolean) => void
   onSaved: (key: APIKey) => void
 }) {
+  const { t } = useTranslation()
   return (
     <Dialog
       open={target !== null}
@@ -369,8 +393,10 @@ function RenameKeyDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>重命名 API Key</DialogTitle>
-          <DialogDescription>仅修改名称，不会改变 Key 本身。</DialogDescription>
+          <DialogTitle>{t("apiKeys.renameTitle")}</DialogTitle>
+          <DialogDescription>
+            {t("apiKeys.renameDescription")}
+          </DialogDescription>
         </DialogHeader>
         {target && <RenameKeyForm target={target} onSaved={onSaved} />}
       </DialogContent>
@@ -385,6 +411,7 @@ function RenameKeyForm({
   target: APIKey
   onSaved: (key: APIKey) => void
 }) {
+  const { t } = useTranslation()
   const [name, setName] = useState(target.name)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -399,7 +426,7 @@ function RenameKeyForm({
       const updated = await renameAPIKey(target.id, trimmed)
       onSaved(updated)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "重命名失败")
+      setError(err instanceof Error ? err.message : t("errors.renameFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -409,7 +436,7 @@ function RenameKeyForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="rename-key-name">名称</Label>
+        <Label htmlFor="rename-key-name">{t("common.name")}</Label>
         <Input
           id="rename-key-name"
           required
@@ -425,7 +452,7 @@ function RenameKeyForm({
           type="submit"
           disabled={submitting || !trimmed || trimmed === target.name}
         >
-          {submitting ? "保存中…" : "保存"}
+          {submitting ? t("common.saving") : t("common.save")}
         </Button>
       </div>
     </form>
@@ -441,6 +468,7 @@ function CreateKeyDialog({
   onOpenChange: (open: boolean) => void
   onCreated: (key: APIKey) => void
 }) {
+  const { t } = useTranslation()
   const [name, setName] = useState("")
   const [expiresIn, setExpiresIn] = useState<APIKeyExpiry>("90d")
   const [submitting, setSubmitting] = useState(false)
@@ -474,7 +502,9 @@ function CreateKeyDialog({
       setCreatedKey(rawKey)
       onCreated(safeKey)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "创建 API Key 失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.createAPIKeyFailed")
+      )
     } finally {
       setSubmitting(false)
     }
@@ -487,7 +517,7 @@ function CreateKeyDialog({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setError("复制失败，请手动选中复制")
+      setError(t("common.copyFailed"))
     }
   }
 
@@ -498,13 +528,15 @@ function CreateKeyDialog({
           <div className="flex items-center gap-2">
             <KeyRound className="size-4 text-muted-foreground" />
             <DialogTitle>
-              {createdKey ? "API Key 已创建" : "创建 API Key"}
+              {createdKey
+                ? t("apiKeys.createdTitle")
+                : t("apiKeys.createTitle")}
             </DialogTitle>
           </div>
           <DialogDescription>
             {createdKey
-              ? "请立即复制并妥善保管。关闭窗口后将只显示 Key 前缀。"
-              : "为外部客户端创建一把用户 API Key。"}
+              ? t("apiKeys.copyDescriptionCreated")
+              : t("apiKeys.createDescription")}
           </DialogDescription>
         </DialogHeader>
 
@@ -521,32 +553,32 @@ function CreateKeyDialog({
                 onClick={() => void handleCopy()}
               >
                 {copied ? <Check /> : <Copy />}
-                {copied ? "已复制" : "复制"}
+                {copied ? t("common.copied") : t("common.copy")}
               </Button>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end">
               <Button type="button" onClick={() => handleOpenChange(false)}>
-                完成
+                {t("common.complete")}
               </Button>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="key-name">名称</Label>
+              <Label htmlFor="key-name">{t("common.name")}</Label>
               <Input
                 id="key-name"
                 required
                 maxLength={128}
-                placeholder="例如：本机 Codex"
+                placeholder={t("apiKeys.namePlaceholder")}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 autoFocus
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="key-expiry">有效期</Label>
+              <Label htmlFor="key-expiry">{t("apiKeys.expiry")}</Label>
               <select
                 id="key-expiry"
                 value={expiresIn}
@@ -556,8 +588,8 @@ function CreateKeyDialog({
                 className="h-9 rounded-md border border-input bg-popover px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 {expiryOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
+                  <option key={option} value={option}>
+                    {t(`expiry.${option}`)}
                   </option>
                 ))}
               </select>
@@ -565,7 +597,7 @@ function CreateKeyDialog({
             {error && <p className="text-sm text-destructive">{error}</p>}
             <div className="flex justify-end">
               <Button type="submit" disabled={submitting || !name.trim()}>
-                {submitting ? "创建中…" : "创建"}
+                {submitting ? t("common.creating") : t("common.create")}
               </Button>
             </div>
           </form>

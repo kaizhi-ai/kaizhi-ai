@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Eye, EyeOff, MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { modelAliasFromName } from "@/lib/model-alias"
 import {
@@ -14,7 +15,7 @@ import {
 } from "@/lib/openai-compatibility-providers-client"
 import {
   proxyEnabledFromURL,
-  proxySummaryLabel,
+  proxySummaryKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
 import {
@@ -91,23 +92,23 @@ function apiKeyCount(row: OpenAICompatibilityProvider) {
   return row.has_api_key ? 1 : 0
 }
 
-function apiKeySummary(row: OpenAICompatibilityProvider) {
+function apiKeySummary(row: OpenAICompatibilityProvider, configured: string) {
   const count = apiKeyCount(row)
   if (count === 0) return "-"
   const preview =
     row.api_key_entries?.find((entry) => entry.has_api_key)?.api_key_preview ||
     row.api_key_preview ||
-    "已配置"
+    configured
   if (count === 1) return preview
   return `${preview} +${count - 1}`
 }
 
-function proxySummary(row: OpenAICompatibilityProvider) {
+function proxySummaryKeyFor(row: OpenAICompatibilityProvider) {
   const proxies =
     row.api_key_entries
       ?.filter((entry) => entry.has_api_key)
       .map((entry) => entry.proxy_url) ?? []
-  return proxySummaryLabel(proxies, row.proxy_url)
+  return proxySummaryKey(proxies, row.proxy_url)
 }
 
 function keyRowsFromProvider(
@@ -139,6 +140,7 @@ function keyRowsFromProvider(
 }
 
 export default function AdminOpenAICompatibilityProviderPage() {
+  const { t } = useTranslation()
   const [providers, setProviders] = useState<OpenAICompatibilityProvider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -163,7 +165,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
           setError(
             err instanceof Error
               ? err.message
-              : "加载 OpenAI Compatibility Provider 失败"
+              : t("errors.loadOpenAICompatibilityProvidersFailed")
           )
         }
       })
@@ -173,7 +175,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const rows = useMemo(
     () => [...providers].sort((a, b) => a.index - b.index),
@@ -187,7 +189,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
     try {
       await refreshProviders()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "刷新失败")
+      setError(err instanceof Error ? err.message : t("common.refreshFailed"))
     }
   }
 
@@ -200,7 +202,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
       await refreshProviders()
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败")
+      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -214,8 +216,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
             OpenAI Compatibility Provider
           </h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            走 /v1/chat/completions 协议的 OpenAI 兼容上游，例如 OneAPI、
-            OpenRouter 或自建聚合网关。
+            {t("provider.openAICompatibilityDescription")}
           </p>
         </div>
         <Button
@@ -224,7 +225,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
           onClick={() => setAddOpen(true)}
         >
           <Plus />
-          添加 Provider
+          {t("common.addProvider")}
         </Button>
       </div>
 
@@ -238,11 +239,11 @@ export default function AdminOpenAICompatibilityProviderPage() {
         <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-40">名称</TableHead>
+              <TableHead className="min-w-40">{t("common.name")}</TableHead>
               <TableHead className="min-w-40">API Keys</TableHead>
               <TableHead className="min-w-64">Base URL</TableHead>
-              <TableHead className="min-w-24">代理</TableHead>
-              <TableHead className="w-24">模型</TableHead>
+              <TableHead className="min-w-24">{t("common.proxy")}</TableHead>
+              <TableHead className="w-24">{t("provider.models")}</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -253,7 +254,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
                   colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  加载中…
+                  {t("common.loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -262,13 +263,13 @@ export default function AdminOpenAICompatibilityProviderPage() {
                 <TableRow key={row.id || row.name}>
                   <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell className="font-mono text-xs">
-                    {apiKeySummary(row)}
+                    {apiKeySummary(row, t("provider.configured"))}
                   </TableCell>
                   <TableCell className="max-w-72 truncate text-xs text-muted-foreground">
                     {row.base_url || DEFAULT_BASE_URL}
                   </TableCell>
                   <TableCell className="max-w-56 truncate font-mono text-xs text-muted-foreground">
-                    {proxySummary(row)}
+                    {t(`proxy.${proxySummaryKeyFor(row)}`)}
                   </TableCell>
                   <TableCell>{row.models?.length ?? 0}</TableCell>
                   <TableCell>
@@ -278,7 +279,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="更多操作"
+                            aria-label={t("common.moreActions")}
                           />
                         }
                       >
@@ -286,7 +287,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setEditTarget(row)}>
-                          编辑
+                          {t("common.edit")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -294,7 +295,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
                           onClick={() => setDeleteTarget(row)}
                         >
                           <Trash2 />
-                          删除
+                          {t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -307,7 +308,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
                   colSpan={6}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  暂无 OpenAI Compatibility Provider
+                  {t("provider.emptyOpenAICompatibilityProvider")}
                 </TableCell>
               </TableRow>
             )}
@@ -318,8 +319,12 @@ export default function AdminOpenAICompatibilityProviderPage() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>添加 OpenAI Compatibility Provider</DialogTitle>
-            <DialogDescription>填写上游名称、地址和凭证。</DialogDescription>
+            <DialogTitle>
+              {t("provider.addOpenAICompatibilityProvider")}
+            </DialogTitle>
+            <DialogDescription>
+              {t("provider.selectTypeCredentials")}
+            </DialogDescription>
           </DialogHeader>
           <OpenAICompatibilityProviderForm
             onSuccess={() => void handleSaved()}
@@ -336,9 +341,13 @@ export default function AdminOpenAICompatibilityProviderPage() {
         <DialogContent className="sm:max-w-4xl">
           <DialogHeader>
             <DialogTitle>
-              {editTarget ? `编辑 ${editTarget.name}` : ""}
+              {editTarget
+                ? t("provider.editTitle", { name: editTarget.name })
+                : ""}
             </DialogTitle>
-            <DialogDescription>编辑上游地址、凭证和模型。</DialogDescription>
+            <DialogDescription>
+              {t("provider.editAddressCredentialsModels")}
+            </DialogDescription>
           </DialogHeader>
           {editTarget && (
             <OpenAICompatibilityProviderForm
@@ -357,20 +366,25 @@ export default function AdminOpenAICompatibilityProviderPage() {
       >
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>删除该 Provider？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("provider.deleteOpenAIProviderTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleteTarget ? rowLabel(deleteTarget) : ""}”
-              删除后不可用于模型访问。
+              {t("provider.deleteProviderDescription", {
+                name: deleteTarget ? rowLabel(deleteTarget) : "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleting}
               onClick={() => void confirmDelete()}
             >
-              {deleting ? "删除中…" : "删除"}
+              {deleting ? t("common.deleting") : t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -386,6 +400,7 @@ function OpenAICompatibilityProviderForm({
   initial?: OpenAICompatibilityProvider
   onSuccess: () => void
 }) {
+  const { t } = useTranslation()
   const isEdit = initial !== undefined
   const [name, setName] = useState(initial?.name ?? "")
   const [baseUrl, setBaseUrl] = useState(initial?.base_url || DEFAULT_BASE_URL)
@@ -451,7 +466,7 @@ function OpenAICompatibilityProviderForm({
   async function handleFetchModels() {
     const entry = fetchKeyEntry
     if (!entry) {
-      setError("API Key 不能为空")
+      setError(t("errors.apiKeyRequired"))
       return
     }
     setError(null)
@@ -465,7 +480,9 @@ function OpenAICompatibilityProviderForm({
       })
       setModels(ids.map((id) => ({ name: id, alias: modelAliasFromName(id) })))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "拉取模型列表失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.fetchModelsFailed")
+      )
     } finally {
       setFetching(false)
     }
@@ -476,20 +493,20 @@ function OpenAICompatibilityProviderForm({
     setError(null)
 
     if (!name.trim()) {
-      setError("名称不能为空")
+      setError(t("errors.nameRequired"))
       return
     }
     if (!baseUrl.trim()) {
-      setError("Base URL 不能为空")
+      setError(t("errors.baseURLRequired"))
       return
     }
     const entries = normalizedAPIKeyEntries()
     if (entries.length === 0) {
-      setError("API Key 不能为空")
+      setError(t("errors.apiKeyRequired"))
       return
     }
     if (!models.some((model) => model.name.trim() && model.alias.trim())) {
-      setError("模型不能为空，请添加模型或从上游 /models 拉取")
+      setError(t("provider.modelsRequired"))
       return
     }
 
@@ -508,7 +525,7 @@ function OpenAICompatibilityProviderForm({
       }
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败")
+      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -518,11 +535,11 @@ function OpenAICompatibilityProviderForm({
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {!isEdit && (
         <p className="text-sm text-muted-foreground">
-          上游需兼容 OpenAI /v1/chat/completions 与 /v1/models。
+          {t("provider.openAICompatibilityFormHelp")}
         </p>
       )}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="openai-compat-name">名称</Label>
+        <Label htmlFor="openai-compat-name">{t("common.name")}</Label>
         <Input
           id="openai-compat-name"
           required
@@ -553,7 +570,7 @@ function OpenAICompatibilityProviderForm({
             >
               <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor={`${entry.localId}-key`}>
-                  API Key {index + 1}
+                  {t("provider.apiKeyLabel", { index: index + 1 })}
                 </Label>
                 <div className="flex min-w-0 gap-2">
                   <Input
@@ -574,7 +591,9 @@ function OpenAICompatibilityProviderForm({
                     variant="outline"
                     size="icon"
                     className="h-9 w-9 shrink-0"
-                    aria-label={entry.showKey ? "隐藏" : "显示"}
+                    aria-label={
+                      entry.showKey ? t("common.hide") : t("common.show")
+                    }
                     onClick={() =>
                       updateAPIKeyEntry(entry.localId, {
                         showKey: !entry.showKey,
@@ -586,7 +605,9 @@ function OpenAICompatibilityProviderForm({
                 </div>
               </div>
               <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor={`${entry.localId}-proxy`}>代理</Label>
+                <Label htmlFor={`${entry.localId}-proxy`}>
+                  {t("common.proxy")}
+                </Label>
                 <div className="flex h-9 items-center gap-2">
                   <Switch
                     id={`${entry.localId}-proxy`}
@@ -596,10 +617,14 @@ function OpenAICompatibilityProviderForm({
                         proxyEnabled: checked,
                       })
                     }
-                    aria-label={`API Key ${index + 1} 使用代理`}
+                    aria-label={`${t("provider.apiKeyLabel", {
+                      index: index + 1,
+                    })} ${t("proxy.useProxy")}`}
                   />
                   <span className="text-xs text-muted-foreground">
-                    {entry.proxyEnabled ? "开启" : "直连"}
+                    {entry.proxyEnabled
+                      ? t("proxy.enabled")
+                      : t("proxy.direct")}
                   </span>
                 </div>
               </div>
@@ -607,7 +632,7 @@ function OpenAICompatibilityProviderForm({
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="删除 API Key"
+                aria-label={t("provider.removeAPIKey")}
                 disabled={apiKeyEntries.length <= 1}
                 onClick={() => removeAPIKeyEntry(entry.localId)}
                 className="self-end"
@@ -625,14 +650,14 @@ function OpenAICompatibilityProviderForm({
           className="self-start"
         >
           <Plus />
-          添加 API Key
+          {t("provider.addAPIKey")}
         </Button>
       </div>
       <div className="flex flex-col gap-1.5">
         <Label>
-          模型{" "}
+          {t("provider.models")}{" "}
           <span className="text-muted-foreground">
-            （必填，用于注册可访问模型）
+            {t("provider.modelsRequiredHint")}
           </span>
         </Label>
         <ModelRowsEditor
@@ -646,7 +671,7 @@ function OpenAICompatibilityProviderForm({
               disabled={fetching || !canFetchModels}
               onClick={() => void handleFetchModels()}
             >
-              {fetching ? "获取中…" : "从上游 /models 拉取"}
+              {fetching ? t("common.fetching") : t("common.fetchFromModels")}
             </Button>
           }
         />
@@ -654,7 +679,7 @@ function OpenAICompatibilityProviderForm({
       {error && <p className="text-sm break-all text-destructive">{error}</p>}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
-          {submitting ? "保存中…" : "保存"}
+          {submitting ? t("common.saving") : t("common.save")}
         </Button>
       </div>
     </form>

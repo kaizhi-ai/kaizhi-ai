@@ -1,3 +1,5 @@
+import i18n from "@/lib/i18n"
+
 const TOKEN_KEY = "kaizhi.access_token"
 
 export type AuthUser = {
@@ -35,7 +37,13 @@ export async function loginWithEmail(
     })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
-      return { error: { message: data?.error ?? `登录失败 (${res.status})` } }
+      return {
+        error: {
+          message:
+            data?.error ??
+            i18n.t("errors.loginFailedWithStatus", { status: res.status }),
+        },
+      }
     }
     if (data?.access_token) {
       setToken(data.access_token)
@@ -43,7 +51,9 @@ export async function loginWithEmail(
     return {}
   } catch (err) {
     return {
-      error: { message: err instanceof Error ? err.message : "网络错误" },
+      error: {
+        message: err instanceof Error ? err.message : i18n.t("errors.network"),
+      },
     }
   }
 }
@@ -71,7 +81,7 @@ export async function updateCurrentUser(input: {
   language?: string
 }): Promise<AuthUser> {
   const token = getToken()
-  if (!token) throw new Error("请先登录")
+  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
 
   const payload: Record<string, string> = {}
   if (input.name !== undefined) payload.name = input.name.trim()
@@ -87,7 +97,10 @@ export async function updateCurrentUser(input: {
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) {
-    throw new Error(data?.error ?? `保存失败 (${res.status})`)
+    throw new Error(
+      data?.error ??
+        i18n.t("errors.saveFailedWithStatus", { status: res.status })
+    )
   }
   return data.user
 }

@@ -10,6 +10,7 @@ import {
   PowerOff,
   Trash2,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import {
   deleteOAuthProvider,
@@ -23,7 +24,7 @@ import {
 } from "@/lib/oauth-providers-client"
 import {
   proxyEnabledFromURL,
-  proxyStatusLabel,
+  proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
 import {
@@ -75,29 +76,21 @@ const PROVIDERS: OAuthProviderId[] = ["codex", "anthropic", "gemini"]
 
 const PROVIDER_META: Record<
   OAuthProviderId,
-  { label: string; description: string }
+  { label: string; descriptionKey: string }
 > = {
   codex: {
     label: "Codex (ChatGPT)",
-    description: "使用 ChatGPT 订阅 OAuth 登录。",
+    descriptionKey: "provider.providerDescriptions.oauthCodex",
   },
   anthropic: {
     label: "Claude (Anthropic)",
-    description: "使用 Claude.ai 账号 OAuth 登录。",
+    descriptionKey: "provider.providerDescriptions.anthropic",
   },
   gemini: {
     label: "Gemini (Google)",
-    description: "使用 Google 账号 OAuth 登录。",
+    descriptionKey: "provider.providerDescriptions.oauthGemini",
   },
 }
-
-const dateFmt = new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-})
 
 type FilesByProvider = Record<OAuthProviderId, AuthFile[]>
 type Row = { provider: OAuthProviderId; file: AuthFile }
@@ -108,7 +101,7 @@ function emptyFiles(): FilesByProvider {
   return { codex: [], anthropic: [], gemini: [] }
 }
 
-function formatDate(value?: string) {
+function formatDate(value: string | undefined, dateFmt: Intl.DateTimeFormat) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "-"
@@ -123,21 +116,21 @@ function rowKey(row: Row) {
   return `${row.provider}-${row.file.id || row.file.name}`
 }
 
-function statusLabel(file: AuthFile) {
-  if (file.disabled) return "已禁用"
+function statusTranslationKey(file: AuthFile) {
+  if (file.disabled) return "provider.status.disabled"
   switch (file.status) {
     case "active":
-      return "正常"
+      return "provider.status.active"
     case "pending":
-      return "等待中"
+      return "provider.status.pending"
     case "refreshing":
-      return "刷新中"
+      return "provider.status.refreshing"
     case "error":
-      return "异常"
+      return "provider.status.error"
     case "disabled":
-      return "已禁用"
+      return "provider.status.disabled"
     default:
-      return file.status || "-"
+      return null
   }
 }
 
@@ -150,6 +143,18 @@ function statusClassName(file: AuthFile) {
 }
 
 export default function AdminOAuthProvidersPage() {
+  const { t, i18n } = useTranslation()
+  const dateFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(i18n.language, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [i18n.language]
+  )
   const [filesByProvider, setFilesByProvider] =
     useState<FilesByProvider>(emptyFiles)
   const [loading, setLoading] = useState(true)
@@ -180,7 +185,9 @@ export default function AdminOAuthProvidersPage() {
         .catch((err: unknown) => {
           if (!cancelled) {
             setError(
-              err instanceof Error ? err.message : "加载 OAuth Provider 失败"
+              err instanceof Error
+                ? err.message
+                : t("errors.loadOAuthProvidersFailed")
             )
           }
         })
@@ -191,7 +198,7 @@ export default function AdminOAuthProvidersPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const rows = useMemo<Row[]>(
     () =>
@@ -218,7 +225,9 @@ export default function AdminOAuthProvidersPage() {
         ),
       }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存状态失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.saveStatusFailed")
+      )
     } finally {
       setStatusUpdatingKey(null)
     }
@@ -238,7 +247,7 @@ export default function AdminOAuthProvidersPage() {
       }))
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败")
+      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -250,7 +259,7 @@ export default function AdminOAuthProvidersPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">OAuth Provider</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Codex、Claude 与 Gemini 的 OAuth 凭证由 CLIProxyAPI 使用。
+            {t("provider.oauthDescription")}
           </p>
         </div>
         <Button
@@ -259,7 +268,7 @@ export default function AdminOAuthProvidersPage() {
           onClick={() => setAddOpen(true)}
         >
           <Plus />
-          添加 Provider
+          {t("common.addProvider")}
         </Button>
       </div>
 
@@ -273,11 +282,17 @@ export default function AdminOAuthProvidersPage() {
         <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-44">类型</TableHead>
-              <TableHead className="min-w-56">账号</TableHead>
-              <TableHead className="min-w-24">状态</TableHead>
-              <TableHead className="min-w-24">代理</TableHead>
-              <TableHead className="min-w-40">更新时间</TableHead>
+              <TableHead className="min-w-44">{t("common.type")}</TableHead>
+              <TableHead className="min-w-56">
+                {t("provider.oauthAccount")}
+              </TableHead>
+              <TableHead className="min-w-24">
+                {t("adminUsers.status")}
+              </TableHead>
+              <TableHead className="min-w-24">{t("common.proxy")}</TableHead>
+              <TableHead className="min-w-40">
+                {t("adminUsers.updatedAt")}
+              </TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -288,7 +303,7 @@ export default function AdminOAuthProvidersPage() {
                   colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  加载中…
+                  {t("common.loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -308,13 +323,15 @@ export default function AdminOAuthProvidersPage() {
                     className={statusClassName(row.file)}
                     title={row.file.status_message}
                   >
-                    {statusLabel(row.file)}
+                    {statusTranslationKey(row.file)
+                      ? t(statusTranslationKey(row.file)!)
+                      : row.file.status || "-"}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {proxyStatusLabel(row.file.proxy_url)}
+                    {t(`proxy.${proxyStatusKey(row.file.proxy_url)}`)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {formatDate(row.file.updated_at)}
+                    {formatDate(row.file.updated_at, dateFmt)}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -323,7 +340,7 @@ export default function AdminOAuthProvidersPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="更多操作"
+                            aria-label={t("common.moreActions")}
                           />
                         }
                       >
@@ -335,10 +352,12 @@ export default function AdminOAuthProvidersPage() {
                           onClick={() => void toggleDisabled(row)}
                         >
                           {row.file.disabled ? <Power /> : <PowerOff />}
-                          {row.file.disabled ? "启用" : "禁用"}
+                          {row.file.disabled
+                            ? t("provider.toggleDisabledEnable")
+                            : t("provider.toggleDisabledDisable")}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setProxyTarget(row)}>
-                          编辑代理
+                          {t("provider.editProxy")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -346,7 +365,7 @@ export default function AdminOAuthProvidersPage() {
                           onClick={() => setDeleteTarget(row)}
                         >
                           <Trash2 />
-                          删除
+                          {t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -359,7 +378,7 @@ export default function AdminOAuthProvidersPage() {
                   colSpan={6}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  暂无 OAuth Provider
+                  {t("provider.emptyOAuthProvider")}
                 </TableCell>
               </TableRow>
             )}
@@ -376,13 +395,13 @@ export default function AdminOAuthProvidersPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>添加 OAuth Provider</DialogTitle>
+            <DialogTitle>{t("provider.addOAuthProvider")}</DialogTitle>
             <DialogDescription>
-              选择 Provider 并完成 OAuth 登录。
+              {t("provider.oauthLoginDescription")}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="oauth-provider">类型</Label>
+            <Label htmlFor="oauth-provider">{t("common.type")}</Label>
             <Select
               value={addProvider}
               onValueChange={(value) =>
@@ -422,9 +441,11 @@ export default function AdminOAuthProvidersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {proxyTarget ? `编辑 ${fileTitle(proxyTarget.file)}` : ""}
+              {proxyTarget
+                ? t("provider.editTitle", { name: fileTitle(proxyTarget.file) })
+                : ""}
             </DialogTitle>
-            <DialogDescription>开启走全局代理，关闭后直连。</DialogDescription>
+            <DialogDescription>{t("proxy.fieldDescription")}</DialogDescription>
           </DialogHeader>
           {proxyTarget && (
             <ProxyURLForm
@@ -446,20 +467,25 @@ export default function AdminOAuthProvidersPage() {
       >
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>删除该 OAuth Provider？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("provider.deleteOAuthProviderTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleteTarget ? fileTitle(deleteTarget.file) : ""}”
-              删除后不可用于模型访问。
+              {t("provider.deleteProviderDescription", {
+                name: deleteTarget ? fileTitle(deleteTarget.file) : "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleting}
               onClick={() => void confirmDelete()}
             >
-              {deleting ? "删除中…" : "删除"}
+              {deleting ? t("common.deleting") : t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -475,6 +501,7 @@ function OAuthFlow({
   provider: OAuthProviderId
   onSuccess: (files: AuthFile[]) => void
 }) {
+  const { t } = useTranslation()
   const meta = PROVIDER_META[provider]
   const [authState, setAuthState] = useState<string | null>(null)
   const [authUrl, setAuthUrl] = useState<string | null>(null)
@@ -497,7 +524,9 @@ function OAuthFlow({
       setRedirectUrl("")
       setCopied(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "获取授权链接失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.startOAuthFailed")
+      )
     } finally {
       setStarting(false)
     }
@@ -510,7 +539,7 @@ function OAuthFlow({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setError("复制失败，请手动选中复制")
+      setError(t("common.copyFailed"))
     }
   }
 
@@ -527,7 +556,9 @@ function OAuthFlow({
       const nextFiles = await listOAuthProviders(provider)
       onSuccess(nextFiles)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "OAuth 登录失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.oauthLoginFailed")
+      )
     } finally {
       setSubmitting(false)
     }
@@ -536,13 +567,15 @@ function OAuthFlow({
   if (!authUrl) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">{meta.description}</p>
+        <p className="text-sm text-muted-foreground">
+          {t(meta.descriptionKey)}
+        </p>
         {provider === "gemini" && (
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="gemini-project">Project ID</Label>
             <Input
               id="gemini-project"
-              placeholder="留空自动发现，或填 ALL / GOOGLE_ONE"
+              placeholder={t("provider.geminiProjectPlaceholder")}
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
               className="h-9 font-mono"
@@ -562,7 +595,7 @@ function OAuthFlow({
             disabled={starting}
           >
             <LogIn />
-            {starting ? "准备中…" : "获取授权链接"}
+            {starting ? t("common.preparing") : t("provider.startOAuth")}
           </Button>
         </div>
       </div>
@@ -572,7 +605,7 @@ function OAuthFlow({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label>授权链接</Label>
+        <Label>{t("provider.oauthAuthURL")}</Label>
         <div className="flex gap-2">
           <Input
             readOnly
@@ -585,7 +618,7 @@ function OAuthFlow({
             variant="outline"
             size="icon"
             className="h-9 w-9"
-            aria-label="复制"
+            aria-label={t("common.copy")}
             onClick={() => void copyAuthURL()}
           >
             {copied ? <Check /> : <Copy />}
@@ -595,7 +628,7 @@ function OAuthFlow({
             variant="outline"
             size="icon"
             className="h-9 w-9"
-            aria-label="打开"
+            aria-label={t("provider.oauthOpen")}
             onClick={() => window.open(authUrl, "_blank", "noopener")}
           >
             <ExternalLink />
@@ -603,7 +636,7 @@ function OAuthFlow({
         </div>
       </div>
       <div className="flex min-w-0 flex-col gap-1.5">
-        <Label htmlFor="oauth-redirect">回调地址</Label>
+        <Label htmlFor="oauth-redirect">{t("provider.oauthRedirectURL")}</Label>
         <Textarea
           id="oauth-redirect"
           required
@@ -618,7 +651,7 @@ function OAuthFlow({
       {error && <p className="text-sm break-all text-destructive">{error}</p>}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting || !redirectUrl.trim()}>
-          {submitting ? "登录中…" : "提交"}
+          {submitting ? t("common.submittingLogin") : t("common.submit")}
         </Button>
       </div>
     </form>
@@ -632,6 +665,7 @@ function ProxyURLForm({
   target: ProxyTarget
   onSaved: () => Promise<void>
 }) {
+  const { t } = useTranslation()
   const [proxyEnabled, setProxyEnabled] = useState(() =>
     proxyEnabledFromURL(target.file.proxy_url)
   )
@@ -650,7 +684,7 @@ function ProxyURLForm({
       )
       await onSaved()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败")
+      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -666,7 +700,7 @@ function ProxyURLForm({
       {error && <p className="text-sm break-all text-destructive">{error}</p>}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
-          {submitting ? "保存中…" : "保存"}
+          {submitting ? t("common.saving") : t("common.save")}
         </Button>
       </div>
     </form>

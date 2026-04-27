@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Eye, EyeOff, MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { modelAliasFromName } from "@/lib/model-alias"
 import {
@@ -14,7 +15,7 @@ import {
 } from "@/lib/provider-api-keys-client"
 import {
   proxyEnabledFromURL,
-  proxyStatusLabel,
+  proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
 import {
@@ -67,22 +68,21 @@ import { ProxySwitchField } from "@/components/admin/proxy-switch-field"
 
 const KEY_META: Record<
   ProviderAPIKeyKind,
-  { label: string; description: string; defaultBaseUrl: string }
+  { label: string; descriptionKey: string; defaultBaseUrl: string }
 > = {
   claude: {
     label: "Anthropic",
-    description:
-      "走 Anthropic /v1/messages 协议的 API Key，支持官方或兼容网关。",
+    descriptionKey: "provider.providerDescriptions.claude",
     defaultBaseUrl: "https://api.anthropic.com",
   },
   gemini: {
     label: "Gemini",
-    description: "走 Google Gemini API 协议的 API Key。",
+    descriptionKey: "provider.providerDescriptions.gemini",
     defaultBaseUrl: "https://generativelanguage.googleapis.com",
   },
   codex: {
     label: "OpenAI Response",
-    description: "走 /responses 协议的 API Key，例如 OpenAI 官方或兼容网关。",
+    descriptionKey: "provider.providerDescriptions.codex",
     defaultBaseUrl: "https://api.openai.com/v1",
   },
 }
@@ -106,6 +106,7 @@ function rowLabel(row: Row) {
 }
 
 export default function AdminAPIKeyProviderPage() {
+  const { t } = useTranslation()
   const [keys, setKeys] = useState<ProviderAPIKey[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -129,7 +130,9 @@ export default function AdminAPIKeyProviderPage() {
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(
-            err instanceof Error ? err.message : "加载 API Key Provider 失败"
+            err instanceof Error
+              ? err.message
+              : t("errors.loadAPIKeyProvidersFailed")
           )
         }
       })
@@ -139,7 +142,7 @@ export default function AdminAPIKeyProviderPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const rows = useMemo<Row[]>(
     () =>
@@ -158,7 +161,7 @@ export default function AdminAPIKeyProviderPage() {
     try {
       await refreshKeys()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "刷新失败")
+      setError(err instanceof Error ? err.message : t("common.refreshFailed"))
     }
   }
 
@@ -171,7 +174,7 @@ export default function AdminAPIKeyProviderPage() {
       await refreshKeys()
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败")
+      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -183,8 +186,7 @@ export default function AdminAPIKeyProviderPage() {
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">API Key Provider</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            基于 API Key 的上游凭证，支持 Anthropic、Gemini 与 OpenAI Response
-            协议。
+            {t("provider.apiKeyProviderDescription")}
           </p>
         </div>
         <Button
@@ -193,7 +195,7 @@ export default function AdminAPIKeyProviderPage() {
           onClick={() => setAddOpen(true)}
         >
           <Plus />
-          添加 Provider
+          {t("common.addProvider")}
         </Button>
       </div>
 
@@ -207,12 +209,16 @@ export default function AdminAPIKeyProviderPage() {
         <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-36">类型</TableHead>
+              <TableHead className="min-w-36">{t("common.type")}</TableHead>
               <TableHead className="min-w-40">API Key</TableHead>
               <TableHead className="min-w-56">Base URL</TableHead>
-              <TableHead className="min-w-24">代理</TableHead>
-              <TableHead className="w-24">白名单</TableHead>
-              <TableHead className="w-24">黑名单</TableHead>
+              <TableHead className="min-w-24">{t("common.proxy")}</TableHead>
+              <TableHead className="w-24">
+                {t("provider.whitelistModels")}
+              </TableHead>
+              <TableHead className="w-24">
+                {t("provider.excludedModels")}
+              </TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -223,7 +229,7 @@ export default function AdminAPIKeyProviderPage() {
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  加载中…
+                  {t("common.loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -240,7 +246,7 @@ export default function AdminAPIKeyProviderPage() {
                     {row.base_url || KEY_META[row.provider].defaultBaseUrl}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
-                    {proxyStatusLabel(row.proxy_url)}
+                    {t(`proxy.${proxyStatusKey(row.proxy_url)}`)}
                   </TableCell>
                   <TableCell>{row.models?.length ?? 0}</TableCell>
                   <TableCell>{row.excluded_models?.length ?? 0}</TableCell>
@@ -251,7 +257,7 @@ export default function AdminAPIKeyProviderPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            aria-label="更多操作"
+                            aria-label={t("common.moreActions")}
                           />
                         }
                       >
@@ -259,7 +265,7 @@ export default function AdminAPIKeyProviderPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => setEditTarget(row)}>
-                          编辑
+                          {t("common.edit")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -267,7 +273,7 @@ export default function AdminAPIKeyProviderPage() {
                           onClick={() => setDeleteTarget(row)}
                         >
                           <Trash2 />
-                          删除
+                          {t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -280,7 +286,7 @@ export default function AdminAPIKeyProviderPage() {
                   colSpan={7}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  暂无 API Key Provider
+                  {t("provider.emptyAPIKeyProvider")}
                 </TableCell>
               </TableRow>
             )}
@@ -297,11 +303,13 @@ export default function AdminAPIKeyProviderPage() {
       >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>添加 API Key Provider</DialogTitle>
-            <DialogDescription>选择类型并填写上游凭证。</DialogDescription>
+            <DialogTitle>{t("provider.addAPIKeyProvider")}</DialogTitle>
+            <DialogDescription>
+              {t("provider.selectTypeCredentials")}
+            </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="api-key-provider-kind">类型</Label>
+            <Label htmlFor="api-key-provider-kind">{t("common.type")}</Label>
             <Select
               value={addKind}
               onValueChange={(value) => setAddKind(value as ProviderAPIKeyKind)}
@@ -336,10 +344,14 @@ export default function AdminAPIKeyProviderPage() {
           <DialogHeader>
             <DialogTitle>
               {editTarget
-                ? `编辑 ${KEY_META[editTarget.provider].label} API Key`
+                ? t("provider.editAPIKeyTitle", {
+                    provider: KEY_META[editTarget.provider].label,
+                  })
                 : ""}
             </DialogTitle>
-            <DialogDescription>留空 API Key 则保持原值。</DialogDescription>
+            <DialogDescription>
+              {t("provider.keyUnchangedPlaceholder")}
+            </DialogDescription>
           </DialogHeader>
           {editTarget && (
             <ProviderKeyForm
@@ -359,20 +371,25 @@ export default function AdminAPIKeyProviderPage() {
       >
         <AlertDialogContent size="sm">
           <AlertDialogHeader>
-            <AlertDialogTitle>删除该 API Key Provider？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("provider.deleteAPIKeyProviderTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              “{deleteTarget ? rowLabel(deleteTarget) : ""}”
-              删除后不可用于模型访问。
+              {t("provider.deleteProviderDescription", {
+                name: deleteTarget ? rowLabel(deleteTarget) : "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={deleting}
               onClick={() => void confirmDelete()}
             >
-              {deleting ? "删除中…" : "删除"}
+              {deleting ? t("common.deleting") : t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -390,6 +407,7 @@ function ProviderKeyForm({
   initial?: Row
   onSuccess: () => void
 }) {
+  const { t } = useTranslation()
   const meta = KEY_META[kind]
   const isEdit = initial !== undefined
   const [apiKey, setApiKey] = useState("")
@@ -424,7 +442,9 @@ function ProviderKeyForm({
       })
       setModels(ids.map((id) => ({ name: id, alias: modelAliasFromName(id) })))
     } catch (err) {
-      setError(err instanceof Error ? err.message : "拉取模型列表失败")
+      setError(
+        err instanceof Error ? err.message : t("errors.fetchModelsFailed")
+      )
     } finally {
       setFetching(false)
     }
@@ -435,11 +455,11 @@ function ProviderKeyForm({
     setError(null)
 
     if (!baseUrl.trim()) {
-      setError("Base URL 不能为空")
+      setError(t("errors.baseURLRequired"))
       return
     }
     if (!isEdit && !apiKey.trim()) {
-      setError("API Key 不能为空")
+      setError(t("errors.apiKeyRequired"))
       return
     }
 
@@ -460,7 +480,7 @@ function ProviderKeyForm({
       }
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败")
+      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -469,7 +489,9 @@ function ProviderKeyForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {!isEdit && (
-        <p className="text-sm text-muted-foreground">{meta.description}</p>
+        <p className="text-sm text-muted-foreground">
+          {t(meta.descriptionKey)}
+        </p>
       )}
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={`provider-key-${kind}`}>API Key</Label>
@@ -479,7 +501,7 @@ function ProviderKeyForm({
             type={showKey ? "text" : "password"}
             autoComplete="off"
             required={!isEdit}
-            placeholder={isEdit ? "留空则保持不变" : ""}
+            placeholder={isEdit ? t("provider.keyUnchangedPlaceholder") : ""}
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
             className="h-9 flex-1 font-mono"
@@ -489,7 +511,7 @@ function ProviderKeyForm({
             variant="outline"
             size="icon"
             className="h-9 w-9"
-            aria-label={showKey ? "隐藏" : "显示"}
+            aria-label={showKey ? t("common.hide") : t("common.show")}
             onClick={() => setShowKey((value) => !value)}
           >
             {showKey ? <EyeOff /> : <Eye />}
@@ -514,9 +536,9 @@ function ProviderKeyForm({
       />
       <div className="flex flex-col gap-1.5">
         <Label>
-          白名单模型{" "}
+          {t("provider.whitelistModels")}{" "}
           <span className="text-muted-foreground">
-            （可选，留空则信任上游 /models）
+            {t("provider.whitelistModelsHint")}
           </span>
         </Label>
         <ModelRowsEditor
@@ -530,15 +552,17 @@ function ProviderKeyForm({
               disabled={fetching || !baseUrl.trim()}
               onClick={() => void handleFetchModels()}
             >
-              {fetching ? "获取中…" : "从上游 /models 拉取"}
+              {fetching ? t("common.fetching") : t("common.fetchFromModels")}
             </Button>
           }
         />
       </div>
       <div className="flex flex-col gap-1.5">
         <Label>
-          黑名单模型{" "}
-          <span className="text-muted-foreground">（可选，支持通配符 *）</span>
+          {t("provider.excludedModels")}{" "}
+          <span className="text-muted-foreground">
+            {t("provider.excludedModelsHint")}
+          </span>
         </Label>
         <ExcludedRowsEditor
           rows={excludedModels}
@@ -548,7 +572,7 @@ function ProviderKeyForm({
       {error && <p className="text-sm break-all text-destructive">{error}</p>}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
-          {submitting ? "保存中…" : "保存"}
+          {submitting ? t("common.saving") : t("common.save")}
         </Button>
       </div>
     </form>

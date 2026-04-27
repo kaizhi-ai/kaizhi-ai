@@ -7,6 +7,7 @@ import {
   Shield,
   Trash2,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import type { ChatSession } from "@/lib/chats-client"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -45,8 +46,8 @@ type AppSidebarProps = {
   isAdmin?: boolean
 }
 
-function displayTitle(chat: ChatSession) {
-  return chat.title.trim() || "新对话"
+function displayTitle(chat: ChatSession, fallback: string) {
+  return chat.title.trim() || fallback
 }
 
 export function AppSidebar({
@@ -62,7 +63,9 @@ export function AppSidebar({
   onSignOut,
   isAdmin = false,
 }: AppSidebarProps) {
-  const displayName = userName?.trim() || userEmail?.split("@")[0] || "未登录"
+  const { t } = useTranslation()
+  const displayName =
+    userName?.trim() || userEmail?.split("@")[0] || t("nav.notSignedIn")
   const initial = (displayName || userEmail || "?").charAt(0).toUpperCase()
 
   return (
@@ -76,16 +79,16 @@ export function AppSidebar({
         </div>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="新建对话" onClick={onNewChat}>
+            <SidebarMenuButton tooltip={t("chat.newChat")} onClick={onNewChat}>
               <Plus />
-              <span>新建对话</span>
+              <span>{t("chat.newChat")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>最近</SidebarGroupLabel>
+          <SidebarGroupLabel>{t("chat.recent")}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {chats.map((chat) => {
@@ -96,14 +99,16 @@ export function AppSidebar({
                       isActive={isActive}
                       onClick={() => onSelectChat(chat.id)}
                     >
-                      <span className="truncate">{displayTitle(chat)}</span>
+                      <span className="truncate">
+                        {displayTitle(chat, t("chat.newChat"))}
+                      </span>
                     </SidebarMenuButton>
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
                           <SidebarMenuAction
                             showOnHover
-                            aria-label="更多操作"
+                            aria-label={t("common.moreActions")}
                           />
                         }
                       >
@@ -115,7 +120,7 @@ export function AppSidebar({
                           onClick={() => onDeleteChat(chat)}
                         >
                           <Trash2 />
-                          删除
+                          {t("common.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -133,7 +138,7 @@ export function AppSidebar({
               <DropdownMenuTrigger
                 render={
                   <SidebarMenuButton
-                    tooltip={userEmail ?? "未登录"}
+                    tooltip={userEmail ?? t("nav.notSignedIn")}
                     size="lg"
                     className="h-16 rounded-none px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:!px-0"
                   />
@@ -157,17 +162,17 @@ export function AppSidebar({
               <DropdownMenuContent side="top" align="start" className="w-56">
                 <DropdownMenuItem onClick={onSettings}>
                   <Settings />
-                  设置
+                  {t("nav.settings")}
                 </DropdownMenuItem>
                 {isAdmin && onAdmin && (
                   <DropdownMenuItem onClick={onAdmin}>
                     <Shield />
-                    后台管理
+                    {t("nav.admin")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={onSignOut}>
                   <LogOut />
-                  退出登录
+                  {t("nav.signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

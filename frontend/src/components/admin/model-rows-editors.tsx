@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { Plus, X } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { modelAliasFromName } from "@/lib/model-alias"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,7 @@ export function ModelRowsEditor({
   onChange: (next: ModelRow[]) => void
   fetchSlot?: ReactNode
 }) {
+  const { t } = useTranslation()
   function update(index: number, patch: Partial<ModelRow>) {
     onChange(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
   }
@@ -49,13 +51,13 @@ export function ModelRowsEditor({
       {rows.map((row, index) => (
         <div key={index} className="flex flex-col gap-2 sm:flex-row">
           <Input
-            placeholder="upstream name"
+            placeholder={t("provider.upstreamName")}
             value={row.name}
             onChange={(event) => updateName(index, event.target.value)}
             className="h-9 flex-1 font-mono text-xs"
           />
           <Input
-            placeholder="alias (留空则同 name)"
+            placeholder={t("provider.modelAliasPlaceholder")}
             value={row.alias}
             onChange={(event) => update(index, { alias: event.target.value })}
             className="h-9 flex-1 font-mono text-xs"
@@ -64,7 +66,7 @@ export function ModelRowsEditor({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="删除模型"
+            aria-label={t("provider.modelDelete")}
             onClick={() => remove(index)}
             className="self-end sm:self-auto"
           >
@@ -81,7 +83,7 @@ export function ModelRowsEditor({
           className="self-start"
         >
           <Plus />
-          添加
+          {t("common.add")}
         </Button>
         {fetchSlot}
       </div>
@@ -96,6 +98,7 @@ export function ExcludedRowsEditor({
   rows: string[]
   onChange: (next: string[]) => void
 }) {
+  const { t } = useTranslation()
   function update(index: number, value: string) {
     onChange(rows.map((row, i) => (i === index ? value : row)))
   }
@@ -113,7 +116,7 @@ export function ExcludedRowsEditor({
       {rows.map((value, index) => (
         <div key={index} className="flex items-center gap-2">
           <Input
-            placeholder="gpt-5-* 或 *codex*"
+            placeholder={t("provider.modelExcludedPlaceholder")}
             value={value}
             onChange={(event) => update(index, event.target.value)}
             className="h-9 flex-1 font-mono text-xs"
@@ -122,7 +125,7 @@ export function ExcludedRowsEditor({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="删除模型"
+            aria-label={t("provider.modelDelete")}
             onClick={() => remove(index)}
           >
             <X />
@@ -137,7 +140,7 @@ export function ExcludedRowsEditor({
         className="self-start"
       >
         <Plus />
-        添加
+        {t("common.add")}
       </Button>
     </div>
   )

@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai"
 import { Globe } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Loader } from "@/components/ui/loader"
 import { MessageContent } from "@/components/ui/message"
@@ -87,6 +88,7 @@ function WebSearchStep({
   part: WebSearchPart
   fallbackResults: NormalizedResult[]
 }) {
+  const { t } = useTranslation()
   const query = extractQuery(part)
   const parsed =
     part.state === "output-available" ? normalizeResults(part.output) : []
@@ -97,16 +99,19 @@ function WebSearchStep({
   const isLoading = !isDone && !isError && !isDenied
 
   const label = isError
-    ? "搜索失败"
+    ? t("chat.search.failed")
     : isDenied
-      ? "搜索未执行"
+      ? t("chat.search.notRun")
       : isDone
         ? query
-          ? `已搜索 “${query}” · ${results.length} 个结果`
-          : `已搜索 · ${results.length} 个结果`
+          ? t("chat.search.completedWithQuery", {
+              query,
+              count: results.length,
+            })
+          : t("chat.search.completed", { count: results.length })
         : query
-          ? `搜索中 “${query}”`
-          : "搜索中..."
+          ? t("chat.search.loadingWithQuery", { query })
+          : t("chat.search.loading")
 
   return (
     <Steps defaultOpen={false} className="my-1">
@@ -125,12 +130,14 @@ function WebSearchStep({
       <StepsContent>
         {isError ? (
           <StepsItem className="text-destructive">
-            {part.errorText ?? "未知错误"}
+            {part.errorText ?? t("errors.unknown")}
           </StepsItem>
         ) : isDenied ? (
-          <StepsItem>未获得搜索结果</StepsItem>
+          <StepsItem>{t("chat.search.noSearchResults")}</StepsItem>
         ) : results.length === 0 ? (
-          <StepsItem>{isDone ? "暂无结果" : "等待结果..."}</StepsItem>
+          <StepsItem>
+            {isDone ? t("chat.search.noResults") : t("chat.search.waiting")}
+          </StepsItem>
         ) : (
           results.map((result, index) => (
             <StepsItem key={`${result.url}-${index}`}>
@@ -156,10 +163,11 @@ function WebSearchStep({
 }
 
 function StandaloneSources({ results }: { results: NormalizedResult[] }) {
+  const { t } = useTranslation()
   return (
     <Steps defaultOpen={false} className="my-1">
       <StepsTrigger leftIcon={<Globe className="size-4" />}>
-        {`来源 · ${results.length} 个`}
+        {t("chat.search.sources", { count: results.length })}
       </StepsTrigger>
       <StepsContent>
         {results.map((result, index) => (

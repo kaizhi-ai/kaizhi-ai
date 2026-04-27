@@ -1,4 +1,5 @@
 import { getToken } from "@/lib/auth-client"
+import i18n from "@/lib/i18n"
 
 export type OAuthProviderId = "anthropic" | "codex" | "gemini"
 
@@ -25,7 +26,7 @@ const OAUTH_PROVIDER_PATH = "/api/v1/oauth-provider"
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
-  if (!token) throw new Error("请先登录")
+  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
 
   const headers = new Headers(init.headers)
   headers.set("Authorization", `Bearer ${token}`)
@@ -36,7 +37,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
     const contentType = res.headers.get("content-type") ?? ""
-    let message = `请求失败 (${res.status})`
+    let message = i18n.t("errors.requestFailedWithStatus", {
+      status: res.status,
+    })
     if (contentType.includes("application/json")) {
       const body = (await res.json().catch(() => null)) as ErrorBody | null
       message = body?.error ?? body?.message ?? message

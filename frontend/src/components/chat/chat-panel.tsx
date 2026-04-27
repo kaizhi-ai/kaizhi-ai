@@ -7,6 +7,7 @@ import { useChat } from "@ai-sdk/react"
 import { convertToModelMessages, stepCountIs, streamText } from "ai"
 import type { ChatTransport, UIMessage } from "ai"
 import { ArrowUp, Globe, Paperclip, Plus, Square, X } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { getToken } from "@/lib/auth-client"
 import {
@@ -18,6 +19,7 @@ import {
   type ChatMessage,
   type MessagePart,
 } from "@/lib/chats-client"
+import i18n from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import {
   ChatContainerContent,
@@ -111,10 +113,11 @@ function readBlobAsDataURL(blob: Blob): Promise<string> {
       if (typeof reader.result === "string") {
         resolve(reader.result)
       } else {
-        reject(new Error("读取文件失败"))
+        reject(new Error(i18n.t("errors.readFileFailed")))
       }
     }
-    reader.onerror = () => reject(reader.error ?? new Error("读取文件失败"))
+    reader.onerror = () =>
+      reject(reader.error ?? new Error(i18n.t("errors.readFileFailed")))
     reader.readAsDataURL(blob)
   })
 }
@@ -125,7 +128,7 @@ async function fetchChatMediaAsDataURL(url: string, token: string) {
       Authorization: `Bearer ${token}`,
     },
   })
-  if (!res.ok) throw new Error("图片加载失败")
+  if (!res.ok) throw new Error(i18n.t("chat.imageLoadFailed"))
 
   return readBlobAsDataURL(await res.blob())
 }
@@ -170,6 +173,7 @@ function ChatImage({
   imageClassName: string
   placeholderClassName: string
 }) {
+  const { t } = useTranslation()
   const localMedia = isLocalChatMediaURL(part.url)
   const directSrc = isInlineImageURL(part.url, part.mediaType) ? part.url : null
   const [fetched, setFetched] = useState<{
@@ -227,13 +231,15 @@ function ChatImage({
       {src ? (
         <img
           src={src}
-          alt={part.filename ?? "uploaded image"}
+          alt={part.filename ?? t("chat.imageMessage")}
           className={imageClassName}
         />
       ) : (
         <div className={placeholderClassName}>
           {failed ? (
-            <span className="px-2 text-center text-xs">图片加载失败</span>
+            <span className="px-2 text-center text-xs">
+              {t("chat.imageLoadFailed")}
+            </span>
           ) : (
             <Loader variant="circular" size="sm" />
           )}
@@ -329,6 +335,7 @@ export function ChatPanel({
   onPersistedMessage,
   onError,
 }: ChatPanelProps) {
+  const { t } = useTranslation()
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<LocalAttachment[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
@@ -341,7 +348,7 @@ export function ChatPanel({
     () => ({
       async sendMessages({ messages, abortSignal, body }) {
         const targetChatId = chatIdFromBody(body, chatId)
-        if (!targetChatId) throw new Error("缺少对话 ID")
+        if (!targetChatId) throw new Error(t("errors.missingChatId"))
 
         const userMessage = [...messages]
           .reverse()
@@ -356,7 +363,7 @@ export function ChatPanel({
         }
 
         const token = getToken()
-        if (!token) throw new Error("未登录")
+        if (!token) throw new Error(t("errors.notLoggedIn"))
         const openai = createOpenAI({
           apiKey: token,
           baseURL: `${window.location.origin}/v1`,
@@ -396,7 +403,7 @@ export function ChatPanel({
         return null
       },
     }),
-    [chatId, onPersistedMessage, webSearchEnabled]
+    [chatId, onPersistedMessage, t, webSearchEnabled]
   )
 
   const {
@@ -411,7 +418,7 @@ export function ChatPanel({
     messages: initialMessages,
     transport,
     onError: (err) => {
-      onError(`生成回复失败：${err.message}`)
+      onError(t("chat.replyFailed", { message: err.message }))
     },
   })
 
@@ -448,11 +455,11 @@ export function ChatPanel({
     setUploadError(null)
     const slots = MAX_ATTACHMENTS - attachments.length
     if (slots <= 0) {
-      setUploadError(`最多可上传 ${MAX_ATTACHMENTS} 张图片`)
+      setUploadError(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
       return
     }
     if (files.length > slots) {
-      setUploadError(`最多可上传 ${MAX_ATTACHMENTS} 张图片`)
+      setUploadError(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
     }
 
     const picked = Array.from(files).slice(0, slots)
@@ -460,11 +467,11 @@ export function ChatPanel({
     try {
       for (const file of picked) {
         if (!ACCEPT_MIME.includes(file.type)) {
-          setUploadError("仅支持 PNG / JPEG / WebP / GIF")
+          setUploadError(t("chat.selectFiles"))
           continue
         }
         if (file.size > MAX_FILE_SIZE) {
-          setUploadError("单张图片不能超过 5MB")
+          setUploadError(t("chat.fileTooLarge"))
           continue
         }
 
@@ -475,7 +482,9 @@ export function ChatPanel({
           ])
           setAttachments((prev) => [...prev, { ...uploaded, dataUrl }])
         } catch (err) {
-          setUploadError(err instanceof Error ? err.message : "上传失败")
+          setUploadError(
+            err instanceof Error ? err.message : t("errors.uploadFailed")
+          )
         }
       }
     } finally {
@@ -507,7 +516,8 @@ export function ChatPanel({
     let savedUser: ChatMessage | null = null
     sendingRef.current = true
     try {
-      const titleSeed = text || pendingAttachments[0]?.name || "图片消息"
+      const titleSeed =
+        text || pendingAttachments[0]?.name || t("chat.imageMessage")
       const targetChatId = chatId ?? (await onCreateChat(titleSeed))
       const storageParts: MessagePart[] = [
         ...pendingAttachments.map((attachment) => ({
@@ -550,7 +560,7 @@ export function ChatPanel({
         setInput(text)
         setAttachments(pendingAttachments)
       }
-      onError(err instanceof Error ? err.message : "发送失败")
+      onError(err instanceof Error ? err.message : t("errors.sendFailed"))
     } finally {
       sendingRef.current = false
     }
@@ -560,7 +570,7 @@ export function ChatPanel({
     if (loading) {
       return (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          加载中…
+          {t("common.loading")}
         </div>
       )
     }
@@ -568,10 +578,10 @@ export function ChatPanel({
       return (
         <div className="flex flex-1 flex-col justify-center gap-3 pb-24">
           <h1 className="text-2xl font-semibold tracking-normal">
-            今天想聊什么？
+            {t("chat.newChatTitle")}
           </h1>
           <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-            输入第一条消息后会创建新对话。历史记录会保存在左侧列表中。
+            {t("chat.newChatHelp")}
           </p>
         </div>
       )
@@ -628,7 +638,7 @@ export function ChatPanel({
                     />
                     <button
                       type="button"
-                      aria-label="移除图片"
+                      aria-label={t("chat.removeImage")}
                       onClick={(event) => {
                         event.stopPropagation()
                         removeAttachment(attachment.url)
@@ -646,7 +656,7 @@ export function ChatPanel({
                 )}
               </div>
             )}
-            <PromptInputTextarea placeholder="输入消息，Enter 发送，Shift+Enter 换行" />
+            <PromptInputTextarea placeholder={t("chat.textareaPlaceholder")} />
             <input
               ref={fileInputRef}
               type="file"
@@ -666,7 +676,7 @@ export function ChatPanel({
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label="更多工具"
+                      aria-label={t("chat.tools")}
                       onClick={(event) => event.stopPropagation()}
                     >
                       <Plus />
@@ -685,23 +695,25 @@ export function ChatPanel({
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Paperclip className="mr-2 size-4" />
-                    添加图片
+                    {t("chat.addImage")}
                   </DropdownMenuItem>
                   <DropdownMenuCheckboxItem
                     checked={webSearchEnabled}
                     onCheckedChange={setWebSearchEnabled}
                   >
                     <Globe className="mr-2 size-4" />
-                    联网搜索
+                    {t("chat.webSearch")}
                   </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <PromptInputAction tooltip={isBusy ? "停止生成" : "发送"}>
+              <PromptInputAction
+                tooltip={isBusy ? t("chat.stop") : t("chat.send")}
+              >
                 {isBusy ? (
                   <Button
                     type="button"
                     size="icon-sm"
-                    aria-label="停止生成"
+                    aria-label={t("chat.stop")}
                     onClick={() => void stop()}
                   >
                     <Square />
@@ -710,7 +722,7 @@ export function ChatPanel({
                   <Button
                     type="button"
                     size="icon-sm"
-                    aria-label="发送"
+                    aria-label={t("chat.send")}
                     disabled={
                       uploading || (!input.trim() && attachments.length === 0)
                     }
@@ -728,7 +740,7 @@ export function ChatPanel({
             </p>
           )}
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            模型可能会产生不准确的信息，请谨慎核对。
+            {t("chat.disclaimer")}
           </p>
         </div>
       </div>

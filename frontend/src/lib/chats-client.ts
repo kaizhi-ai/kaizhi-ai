@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai"
 
 import { getToken } from "@/lib/auth-client"
+import i18n from "@/lib/i18n"
 
 export type ChatRole = "system" | "user" | "assistant" | "tool"
 
@@ -63,7 +64,7 @@ export type ChatMessage = {
 
 function authToken(): string {
   const token = getToken()
-  if (!token) throw new Error("未登录")
+  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
   return token
 }
 
@@ -80,7 +81,9 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const data = await res.json().catch(() => null)
     const message =
-      typeof data?.error === "string" ? data.error : `请求失败 (${res.status})`
+      typeof data?.error === "string"
+        ? data.error
+        : i18n.t("errors.requestFailedWithStatus", { status: res.status })
     throw new Error(message)
   }
   if (res.status === 204) return undefined as T
@@ -193,7 +196,7 @@ export async function uploadChatAttachment(
 
 export function draftTitleFromText(text: string): string {
   const title = text.trim().replace(/\s+/g, " ").slice(0, 40)
-  return title || "新对话"
+  return title || i18n.t("chat.newChat")
 }
 
 export function textFromUIMessage(message: UIMessage): string {

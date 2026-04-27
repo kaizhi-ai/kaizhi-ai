@@ -1,4 +1,5 @@
 import { getToken } from "@/lib/auth-client"
+import i18n from "@/lib/i18n"
 
 export type AdminUserRole = "user" | "admin"
 export type AdminUserStatus = "active" | "banned"
@@ -24,7 +25,7 @@ const ADMIN_USERS_PATH = "/api/v1/admin/users"
 
 function authToken(): string {
   const token = getToken()
-  if (!token) throw new Error("请先登录")
+  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
   return token
 }
 
@@ -39,7 +40,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, { ...init, headers })
   if (!res.ok) {
     const contentType = res.headers.get("content-type") ?? ""
-    let message = `请求失败 (${res.status})`
+    let message = i18n.t("errors.requestFailedWithStatus", {
+      status: res.status,
+    })
     if (contentType.includes("application/json")) {
       const data = (await res.json().catch(() => null)) as ErrorBody | null
       message = data?.error ?? data?.message ?? message

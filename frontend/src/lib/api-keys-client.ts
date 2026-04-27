@@ -1,4 +1,5 @@
 import { getToken } from "@/lib/auth-client"
+import i18n from "@/lib/i18n"
 
 export type APIKeyStatus = "active" | "revoked" | string
 
@@ -23,7 +24,7 @@ export type APIKeyExpiry = "30d" | "90d" | "365d" | "never"
 
 function authToken(): string {
   const token = getToken()
-  if (!token) throw new Error("未登录")
+  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
   return token
 }
 
@@ -40,7 +41,9 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const data = await res.json().catch(() => null)
     const message =
-      typeof data?.error === "string" ? data.error : `请求失败 (${res.status})`
+      typeof data?.error === "string"
+        ? data.error
+        : i18n.t("errors.requestFailedWithStatus", { status: res.status })
     throw new Error(message)
   }
   if (res.status === 204) return undefined as T

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useTranslation } from "react-i18next"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { loginWithEmail } from "@/lib/auth-client"
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label"
 type LocationState = { from?: { pathname?: string } } | null
 
 export default function LoginPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const { user, refresh } = useAuth()
@@ -48,13 +50,13 @@ export default function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
       <Card className="w-full max-w-sm gap-6 bg-popover py-8">
         <CardHeader className="px-8">
-          <CardTitle className="text-lg">登录</CardTitle>
-          <CardDescription>使用邮箱和密码登录 Kaizhi Chat</CardDescription>
+          <CardTitle className="text-lg">{t("login.title")}</CardTitle>
+          <CardDescription>{t("login.description")}</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="flex flex-col gap-4 px-8">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">邮箱</Label>
+              <Label htmlFor="email">{t("login.email")}</Label>
               <Input
                 id="email"
                 type="email"
@@ -65,7 +67,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">密码</Label>
+              <Label htmlFor="password">{t("login.password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -82,7 +84,7 @@ export default function LoginPage() {
               className="w-full"
               disabled={loading}
             >
-              {loading ? "登录中…" : "登录"}
+              {loading ? t("login.submitting") : t("login.submit")}
             </Button>
           </CardContent>
         </form>

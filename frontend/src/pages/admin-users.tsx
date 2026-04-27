@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { MoreHorizontal, Plus, Sparkles } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import {
   banAdminUser,
@@ -13,6 +14,7 @@ import {
   type AdminUserRole,
 } from "@/lib/admin-users-client"
 import { useAuth } from "@/lib/auth-context"
+import { languageOptions, supportedLanguage } from "@/lib/i18n"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,19 +61,6 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-const dateFmt = new Intl.DateTimeFormat("zh-CN", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-})
-
-const languageOptions: Array<{ value: AdminUserLanguage; label: string }> = [
-  { value: "zh-CN", label: "简体中文" },
-  { value: "en-US", label: "English" },
-]
-
 function generatePassword(length = 16) {
   const alphabet =
     "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*"
@@ -84,7 +73,7 @@ function generatePassword(length = 16) {
   return out
 }
 
-function formatDate(value?: string) {
+function formatDate(value: string | undefined, dateFmt: Intl.DateTimeFormat) {
   if (!value) return "-"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "-"
@@ -99,19 +88,8 @@ function roleValue(user: AdminUser): AdminUserRole {
   return user.role === "admin" ? "admin" : "user"
 }
 
-function roleLabel(role: string) {
-  return role === "admin" ? "管理员" : "普通用户"
-}
-
 function languageValue(language?: string): AdminUserLanguage {
-  return language === "en-US" ? "en-US" : "zh-CN"
-}
-
-function languageLabel(language?: string) {
-  return (
-    languageOptions.find((item) => item.value === languageValue(language))
-      ?.label ?? "简体中文"
-  )
+  return supportedLanguage(language) as AdminUserLanguage
 }
 
 type UserFilter = "active" | "banned"
@@ -131,6 +109,18 @@ function errorMessage(err: unknown, fallback: string) {
 }
 
 export default function AdminUsersPage() {
+  const { t, i18n } = useTranslation()
+  const dateFmt = useMemo(
+    () =>
+      new Intl.DateTimeFormat(i18n.language, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    [i18n.language]
+  )
   const { user: currentUser, refresh } = useAuth()
   const currentUserId = currentUser?.id
 
@@ -176,7 +166,7 @@ export default function AdminUsersPage() {
         if (!cancelled) setUsers(items)
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(errorMessage(err, "加载用户失败"))
+        if (!cancelled) setError(errorMessage(err, t("errors.loadUsersFailed")))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -184,7 +174,7 @@ export default function AdminUsersPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const activeUsers = useMemo(
     () => users.filter((user) => !isBannedUser(user)),
@@ -221,7 +211,7 @@ export default function AdminUsersPage() {
       resetCreateForm()
       setCreateOpen(false)
     } catch (err) {
-      setCreateError(errorMessage(err, "创建失败"))
+      setCreateError(errorMessage(err, t("adminUsers.createFailed")))
     } finally {
       setCreating(false)
     }
@@ -266,7 +256,7 @@ export default function AdminUsersPage() {
       setEditTarget(null)
       if (updated.id === currentUserId) void refresh()
     } catch (err) {
-      setEditError(errorMessage(err, "保存失败"))
+      setEditError(errorMessage(err, t("errors.saveFailed")))
     } finally {
       setEditing(false)
     }
@@ -289,7 +279,7 @@ export default function AdminUsersPage() {
       await resetAdminUserPassword(pwdTarget.id, pwdValue)
       setPwdDone(true)
     } catch (err) {
-      setPwdError(errorMessage(err, "重置失败"))
+      setPwdError(errorMessage(err, t("adminUsers.resetFailed")))
     } finally {
       setPwdSubmitting(false)
     }
@@ -314,7 +304,7 @@ export default function AdminUsersPage() {
       setUsers((prev) => upsertUser(prev, updated))
       setBanTarget(null)
     } catch (err) {
-      setBanError(errorMessage(err, "封禁失败"))
+      setBanError(errorMessage(err, t("adminUsers.banFailed")))
     } finally {
       setBanSubmitting(false)
     }
@@ -327,7 +317,7 @@ export default function AdminUsersPage() {
       const updated = await unbanAdminUser(target.id)
       setUsers((prev) => upsertUser(prev, updated))
     } catch (err) {
-      setUnbanError(errorMessage(err, "解除封禁失败"))
+      setUnbanError(errorMessage(err, t("adminUsers.unbanFailed")))
     } finally {
       setUnbanningId(null)
     }
@@ -337,9 +327,9 @@ export default function AdminUsersPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold">用户管理</h1>
+          <h1 className="text-xl font-semibold">{t("adminUsers.title")}</h1>
           <p className="text-sm text-muted-foreground">
-            共 {users.length} 个用户
+            {t("adminUsers.totalUsers", { count: users.length })}
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -349,10 +339,10 @@ export default function AdminUsersPage() {
           >
             <TabsList>
               <TabsTrigger value="active">
-                正常 {activeUsers.length}
+                {t("adminUsers.activeCount", { count: activeUsers.length })}
               </TabsTrigger>
               <TabsTrigger value="banned">
-                已封禁 {bannedUsers.length}
+                {t("adminUsers.bannedCount", { count: bannedUsers.length })}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -367,7 +357,7 @@ export default function AdminUsersPage() {
               render={
                 <Button className="w-full sm:w-auto">
                   <Plus />
-                  新建用户
+                  {t("adminUsers.newUser")}
                 </Button>
               }
             />
@@ -377,14 +367,16 @@ export default function AdminUsersPage() {
                 className="flex h-full flex-col gap-4"
               >
                 <SheetHeader>
-                  <SheetTitle>新建用户</SheetTitle>
+                  <SheetTitle>{t("adminUsers.newUser")}</SheetTitle>
                   <SheetDescription>
-                    创建可登录后台和聊天的账号。
+                    {t("adminUsers.createDescription")}
                   </SheetDescription>
                 </SheetHeader>
                 <div className="flex flex-1 flex-col gap-4 px-4">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-email">邮箱</Label>
+                    <Label htmlFor="admin-user-email">
+                      {t("adminUsers.email")}
+                    </Label>
                     <Input
                       id="admin-user-email"
                       type="email"
@@ -396,7 +388,9 @@ export default function AdminUsersPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-name">名字</Label>
+                    <Label htmlFor="admin-user-name">
+                      {t("settings.name")}
+                    </Label>
                     <Input
                       id="admin-user-name"
                       autoComplete="off"
@@ -407,7 +401,9 @@ export default function AdminUsersPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-password">密码</Label>
+                    <Label htmlFor="admin-user-password">
+                      {t("common.password")}
+                    </Label>
                     <div className="flex gap-2">
                       <Input
                         id="admin-user-password"
@@ -426,15 +422,17 @@ export default function AdminUsersPage() {
                         onClick={() => setPassword(generatePassword())}
                       >
                         <Sparkles />
-                        随机
+                        {t("adminUsers.randomPassword")}
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      至少 8 位字符
+                      {t("adminUsers.minPassword")}
                     </p>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-role">角色</Label>
+                    <Label htmlFor="admin-user-role">
+                      {t("adminUsers.role")}
+                    </Label>
                     <Select
                       value={role}
                       onValueChange={(value) => {
@@ -446,13 +444,19 @@ export default function AdminUsersPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="user">普通用户</SelectItem>
-                        <SelectItem value="admin">管理员</SelectItem>
+                        <SelectItem value="user">
+                          {t("adminUsers.roleUser")}
+                        </SelectItem>
+                        <SelectItem value="admin">
+                          {t("adminUsers.roleAdmin")}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-language">语言</Label>
+                    <Label htmlFor="admin-user-language">
+                      {t("settings.language")}
+                    </Label>
                     <Select
                       value={language}
                       onValueChange={(value) => {
@@ -464,12 +468,14 @@ export default function AdminUsersPage() {
                         id="admin-user-language"
                         className="w-full"
                       >
-                        <SelectValue placeholder="默认语言" />
+                        <SelectValue
+                          placeholder={t("adminUsers.languageDefault")}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {languageOptions.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
-                            {option.label}
+                            {t(option.labelKey)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -481,7 +487,9 @@ export default function AdminUsersPage() {
                 </div>
                 <SheetFooter>
                   <Button type="submit" disabled={creating}>
-                    {creating ? "创建中..." : "创建用户"}
+                    {creating
+                      ? t("common.creating")
+                      : t("adminUsers.createUser")}
                   </Button>
                 </SheetFooter>
               </form>
@@ -505,12 +513,20 @@ export default function AdminUsersPage() {
         <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-44">用户</TableHead>
-              <TableHead className="min-w-56">邮箱</TableHead>
-              <TableHead className="min-w-28">语言</TableHead>
-              <TableHead className="min-w-24">角色</TableHead>
-              <TableHead className="min-w-24">状态</TableHead>
-              <TableHead className="min-w-40">创建时间</TableHead>
+              <TableHead className="min-w-44">{t("adminUsers.user")}</TableHead>
+              <TableHead className="min-w-56">
+                {t("adminUsers.email")}
+              </TableHead>
+              <TableHead className="min-w-28">
+                {t("settings.language")}
+              </TableHead>
+              <TableHead className="min-w-24">{t("adminUsers.role")}</TableHead>
+              <TableHead className="min-w-24">
+                {t("adminUsers.status")}
+              </TableHead>
+              <TableHead className="min-w-40">
+                {t("common.createdAt")}
+              </TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -521,7 +537,7 @@ export default function AdminUsersPage() {
                   colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
-                  加载中...
+                  {t("common.loading")}
                 </TableCell>
               </TableRow>
             )}
@@ -538,20 +554,31 @@ export default function AdminUsersPage() {
                       {item.email}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {languageLabel(item.language)}
+                      {t(
+                        languageOptions.find(
+                          (option) =>
+                            option.value === languageValue(item.language)
+                        )?.labelKey ?? "languages.zhCN"
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {roleLabel(item.role)}
+                      {roleValue(item) === "admin"
+                        ? t("adminUsers.roleAdmin")
+                        : t("adminUsers.roleUser")}
                     </TableCell>
                     <TableCell>
                       {isBanned ? (
-                        <span className="text-destructive">已封禁</span>
+                        <span className="text-destructive">
+                          {t("adminUsers.banned")}
+                        </span>
                       ) : (
-                        <span className="text-muted-foreground">正常</span>
+                        <span className="text-muted-foreground">
+                          {t("adminUsers.normal")}
+                        </span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(item.created_at)}
+                      {formatDate(item.created_at, dateFmt)}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -560,7 +587,7 @@ export default function AdminUsersPage() {
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              aria-label="更多操作"
+                              aria-label={t("common.moreActions")}
                             />
                           }
                         >
@@ -568,12 +595,12 @@ export default function AdminUsersPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openEdit(item)}>
-                            编辑
+                            {t("common.edit")}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => openResetPassword(item)}
                           >
-                            重置密码
+                            {t("adminUsers.resetPassword")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {isBanned ? (
@@ -581,7 +608,7 @@ export default function AdminUsersPage() {
                               disabled={isSelf || unbanningId === item.id}
                               onClick={() => void handleUnban(item)}
                             >
-                              解除封禁
+                              {t("adminUsers.unban")}
                             </DropdownMenuItem>
                           ) : (
                             <DropdownMenuItem
@@ -592,7 +619,7 @@ export default function AdminUsersPage() {
                                 setBanTarget(item)
                               }}
                             >
-                              封禁
+                              {t("adminUsers.banUser")}
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -607,7 +634,9 @@ export default function AdminUsersPage() {
                   colSpan={7}
                   className="py-12 text-center text-muted-foreground"
                 >
-                  {filter === "banned" ? "暂无封禁用户" : "暂无正常用户"}
+                  {filter === "banned"
+                    ? t("adminUsers.noBannedUsers")
+                    : t("adminUsers.noActiveUsers")}
                 </TableCell>
               </TableRow>
             )}
@@ -624,12 +653,16 @@ export default function AdminUsersPage() {
         <SheetContent>
           <form onSubmit={handleEdit} className="flex h-full flex-col gap-4">
             <SheetHeader>
-              <SheetTitle>编辑用户</SheetTitle>
-              <SheetDescription>修改名字、邮箱、语言或角色。</SheetDescription>
+              <SheetTitle>{t("adminUsers.editUser")}</SheetTitle>
+              <SheetDescription>
+                {t("adminUsers.editDescription")}
+              </SheetDescription>
             </SheetHeader>
             <div className="flex flex-1 flex-col gap-4 px-4">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-email">邮箱</Label>
+                <Label htmlFor="edit-admin-user-email">
+                  {t("adminUsers.email")}
+                </Label>
                 <Input
                   id="edit-admin-user-email"
                   type="email"
@@ -641,7 +674,9 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-name">名字</Label>
+                <Label htmlFor="edit-admin-user-name">
+                  {t("settings.name")}
+                </Label>
                 <Input
                   id="edit-admin-user-name"
                   autoComplete="off"
@@ -652,7 +687,9 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-language">语言</Label>
+                <Label htmlFor="edit-admin-user-language">
+                  {t("settings.language")}
+                </Label>
                 <Select
                   value={editLanguage}
                   onValueChange={(value) => {
@@ -669,14 +706,16 @@ export default function AdminUsersPage() {
                   <SelectContent>
                     {languageOptions.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        {option.label}
+                        {t(option.labelKey)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-role">角色</Label>
+                <Label htmlFor="edit-admin-user-role">
+                  {t("adminUsers.role")}
+                </Label>
                 <Select
                   value={editRole}
                   onValueChange={(value) => {
@@ -689,13 +728,17 @@ export default function AdminUsersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">普通用户</SelectItem>
-                    <SelectItem value="admin">管理员</SelectItem>
+                    <SelectItem value="user">
+                      {t("adminUsers.roleUser")}
+                    </SelectItem>
+                    <SelectItem value="admin">
+                      {t("adminUsers.roleAdmin")}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {editTarget?.id === currentUserId && (
                   <p className="text-xs text-muted-foreground">
-                    不能修改自己的角色
+                    {t("adminUsers.cannotEditOwnRole")}
                   </p>
                 )}
               </div>
@@ -705,7 +748,7 @@ export default function AdminUsersPage() {
             </div>
             <SheetFooter>
               <Button type="submit" disabled={editing}>
-                {editing ? "保存中..." : "保存"}
+                {editing ? t("common.saving") : t("common.save")}
               </Button>
             </SheetFooter>
           </form>
@@ -726,8 +769,10 @@ export default function AdminUsersPage() {
           {pwdDone ? (
             <div className="flex h-full flex-col gap-4">
               <SheetHeader>
-                <SheetTitle>密码已重置</SheetTitle>
-                <SheetDescription>关闭后将不再显示。</SheetDescription>
+                <SheetTitle>{t("adminUsers.passwordReset")}</SheetTitle>
+                <SheetDescription>
+                  {t("adminUsers.closePasswordDescription")}
+                </SheetDescription>
               </SheetHeader>
               <div className="flex flex-1 flex-col gap-3 px-4">
                 <div className="rounded-md bg-muted p-3 font-mono text-sm break-all select-all">
@@ -739,7 +784,7 @@ export default function AdminUsersPage() {
                   className="h-9 w-fit"
                   onClick={copyPassword}
                 >
-                  {pwdCopied ? "已复制" : "复制密码"}
+                  {pwdCopied ? t("common.copied") : t("common.copy")}
                 </Button>
               </div>
               <SheetFooter>
@@ -751,7 +796,7 @@ export default function AdminUsersPage() {
                     setPwdCopied(false)
                   }}
                 >
-                  完成
+                  {t("common.complete")}
                 </Button>
               </SheetFooter>
             </div>
@@ -761,7 +806,7 @@ export default function AdminUsersPage() {
               className="flex h-full flex-col gap-4"
             >
               <SheetHeader>
-                <SheetTitle>重置密码</SheetTitle>
+                <SheetTitle>{t("adminUsers.resetPassword")}</SheetTitle>
                 <SheetDescription>
                   {pwdTarget
                     ? `${displayName(pwdTarget)} (${pwdTarget.email})`
@@ -770,7 +815,9 @@ export default function AdminUsersPage() {
               </SheetHeader>
               <div className="flex flex-1 flex-col gap-4 px-4">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="reset-admin-user-password">新密码</Label>
+                  <Label htmlFor="reset-admin-user-password">
+                    {t("adminUsers.newPassword")}
+                  </Label>
                   <div className="flex gap-2">
                     <Input
                       id="reset-admin-user-password"
@@ -789,10 +836,12 @@ export default function AdminUsersPage() {
                       onClick={() => setPwdValue(generatePassword())}
                     >
                       <Sparkles />
-                      随机
+                      {t("adminUsers.randomPassword")}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">至少 8 位字符</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t("adminUsers.minPassword")}
+                  </p>
                 </div>
                 {pwdError && (
                   <p className="text-sm text-destructive">{pwdError}</p>
@@ -800,7 +849,9 @@ export default function AdminUsersPage() {
               </div>
               <SheetFooter>
                 <Button type="submit" disabled={pwdSubmitting}>
-                  {pwdSubmitting ? "重置中..." : "重置密码"}
+                  {pwdSubmitting
+                    ? t("adminUsers.resetting")
+                    : t("adminUsers.resetPassword")}
                 </Button>
               </SheetFooter>
             </form>
@@ -819,10 +870,15 @@ export default function AdminUsersPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>封禁该用户？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("adminUsers.banConfirmTitle")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {banTarget
-                ? `${displayName(banTarget)} (${banTarget.email}) 将无法登录，现有会话会被吊销。`
+                ? t("adminUsers.banConfirmDescription", {
+                    name: displayName(banTarget),
+                    email: banTarget.email,
+                  })
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -830,13 +886,17 @@ export default function AdminUsersPage() {
             <p className="px-4 text-sm text-destructive">{banError}</p>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={banSubmitting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={banSubmitting}>
+              {t("common.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               disabled={banSubmitting}
               onClick={confirmBan}
             >
-              {banSubmitting ? "封禁中..." : "封禁"}
+              {banSubmitting
+                ? t("adminUsers.banning")
+                : t("adminUsers.banUser")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
