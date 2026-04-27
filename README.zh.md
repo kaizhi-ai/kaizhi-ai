@@ -22,11 +22,13 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-this-admin-password
 KAIZHI_DATA_DIR=/data
 KAIZHI_PROXY_URL=
+KAIZHI_DEFAULT_LANGUAGE=zh-CN
 ```
 
 - `API_KEY_PEPPER`：生产环境必须使用足够长的随机值，部署后不要更换。
 - `KAIZHI_DATA_DIR`：运行时数据目录（`config.yaml`、OAuth 文件、附件等）。
 - `KAIZHI_PROXY_URL`：可选上游代理，配置后通过内置 xray SOCKS5 出口。
+- `KAIZHI_DEFAULT_LANGUAGE`：新建用户的默认语言，支持 `zh-CN` 或 `en-US`。
 
 ## 运行
 

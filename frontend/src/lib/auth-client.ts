@@ -3,9 +3,12 @@ const TOKEN_KEY = "kaizhi.access_token"
 export type AuthUser = {
   id: string
   email: string
+  name: string
+  language: string
   status: string
   role: string
   created_at: string
+  updated_at?: string
 }
 
 export function getToken(): string | null {
@@ -61,6 +64,32 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
   } catch {
     return null
   }
+}
+
+export async function updateCurrentUser(input: {
+  name?: string
+  language?: string
+}): Promise<AuthUser> {
+  const token = getToken()
+  if (!token) throw new Error("请先登录")
+
+  const payload: Record<string, string> = {}
+  if (input.name !== undefined) payload.name = input.name.trim()
+  if (input.language !== undefined) payload.language = input.language
+
+  const res = await fetch("/api/v1/auth/me", {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error ?? `保存失败 (${res.status})`)
+  }
+  return data.user
 }
 
 export async function logoutSession(token = getToken()): Promise<void> {

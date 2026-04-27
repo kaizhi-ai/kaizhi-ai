@@ -17,8 +17,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrations() error = %v", err)
 	}
-	if len(migrations) != 1 {
-		t.Fatalf("len(migrations) = %d, want 1", len(migrations))
+	if len(migrations) != 2 {
+		t.Fatalf("len(migrations) = %d, want 2", len(migrations))
 	}
 
 	migration := migrations[0]
@@ -33,6 +33,17 @@ func TestLoadMigrations(t *testing.T) {
 	}
 	if len(migration.Checksum) != 64 {
 		t.Fatalf("len(migration.Checksum) = %d, want 64", len(migration.Checksum))
+	}
+
+	profileMigration := migrations[1]
+	if profileMigration.Version != "0002" {
+		t.Fatalf("profile migration version = %q, want 0002", profileMigration.Version)
+	}
+	if profileMigration.Name != "add_user_profile" {
+		t.Fatalf("profile migration name = %q, want add_user_profile", profileMigration.Name)
+	}
+	if !strings.Contains(profileMigration.SQL, "ADD COLUMN IF NOT EXISTS language") {
+		t.Fatalf("profile migration SQL does not include language column")
 	}
 }
 
@@ -70,6 +81,24 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		}
 		if !exists {
 			t.Fatalf("table %s was not created", table)
+		}
+	}
+
+	for _, column := range []string{"name", "language"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = current_schema()
+				  AND table_name = 'users'
+				  AND column_name = $1
+			)
+		`, column).Scan(&exists); err != nil {
+			t.Fatalf("query users.%s column: %v", column, err)
+		}
+		if !exists {
+			t.Fatalf("users.%s column was not created", column)
 		}
 	}
 }

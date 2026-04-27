@@ -180,11 +180,12 @@ export default function ChatPage() {
       <AppSidebar
         chats={chats}
         activeChatId={activeChatId}
+        userName={user?.name}
         userEmail={user?.email}
         onNewChat={handleNewChat}
         onSelectChat={handleSelectChat}
         onDeleteChat={setPendingDelete}
-        onSettings={() => navigate("/settings/api-keys")}
+        onSettings={() => navigate("/settings/general")}
         onAdmin={() => navigate("/admin")}
         onSignOut={handleSignOut}
         isAdmin={user?.role === "admin"}

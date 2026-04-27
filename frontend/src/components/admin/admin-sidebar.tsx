@@ -35,8 +35,9 @@ export function AdminSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, signOut } = useAuth()
-  const displayName = user?.email?.split("@")[0] || "未登录"
-  const initial = (user?.email || "?").charAt(0).toUpperCase()
+  const displayName =
+    user?.name?.trim() || user?.email?.split("@")[0] || "未登录"
+  const initial = (displayName || user?.email || "?").charAt(0).toUpperCase()
 
   function handleSignOut() {
     signOut()
@@ -153,9 +154,7 @@ export function AdminSidebar() {
                 <ChevronsUpDown className="ml-auto text-muted-foreground group-data-[collapsible=icon]:hidden" />
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" className="w-56">
-                <DropdownMenuItem
-                  onClick={() => navigate("/settings/api-keys")}
-                >
+                <DropdownMenuItem onClick={() => navigate("/settings/general")}>
                   <Settings />
                   设置
                 </DropdownMenuItem>

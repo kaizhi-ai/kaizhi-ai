@@ -22,6 +22,7 @@ func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	auth.POST("/login", h.login)
 	authed := auth.Use(apikeys.AuthMiddleware(h.apiKeys, h.users))
 	authed.GET("/me", h.me)
+	authed.PATCH("/me", h.updateMe)
 	authed.POST("/logout", h.logout)
 }
 
@@ -50,12 +51,54 @@ func (h *Handlers) login(c *gin.Context) {
 		"access_token": session.Key,
 		"token_type":   "Bearer",
 		"expires_at":   session.ExpiresAt,
-		"user":         publicUser(user),
+		"user":         h.publicUser(user),
 	})
 }
 
 func (h *Handlers) me(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"user": publicUser(apikeys.CurrentUser(c))})
+	c.JSON(http.StatusOK, gin.H{"user": h.publicUser(apikeys.CurrentUser(c))})
+}
+
+func (h *Handlers) updateMe(c *gin.Context) {
+	current := apikeys.CurrentUser(c)
+	if current == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return
+	}
+
+	var req struct {
+		Name     *string `json:"name"`
+		Language *string `json:"language"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	var params users.UpdateUserParams
+	if req.Name != nil {
+		name, ok := users.NormalizeName(*req.Name)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name must be at most 80 characters"})
+			return
+		}
+		params.Name = &name
+	}
+	if req.Language != nil {
+		language, ok := users.NormalizeLanguage(*req.Language)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "language must be zh-CN or en-US"})
+			return
+		}
+		params.Language = &language
+	}
+
+	user, err := h.users.UpdateUser(c.Request.Context(), current.ID, params)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update profile"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"user": h.publicUser(user)})
 }
 
 func (h *Handlers) logout(c *gin.Context) {
@@ -69,15 +112,18 @@ func (h *Handlers) logout(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func publicUser(user *users.User) gin.H {
+func (h *Handlers) publicUser(user *users.User) gin.H {
 	if user == nil {
 		return gin.H{}
 	}
 	return gin.H{
 		"id":         user.ID,
 		"email":      user.Email,
+		"name":       user.Name,
+		"language":   user.Language,
 		"status":     user.Status,
 		"role":       user.Role,
 		"created_at": user.CreatedAt,
+		"updated_at": user.UpdatedAt,
 	}
 }

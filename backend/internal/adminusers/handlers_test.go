@@ -32,6 +32,8 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 
 	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/admin/users", admin.AccessToken, map[string]string{
 		"email":    "New.User@Example.com",
+		"name":     "  New User  ",
+		"language": "en-US",
 		"password": "initial123",
 		"role":     "user",
 	})
@@ -42,7 +44,7 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 		User users.User `json:"user"`
 	}
 	testutil.DecodeJSON(t, createResp, &created)
-	if created.User.Email != "new.user@example.com" || created.User.Role != users.RoleUser || created.User.Status != users.StatusActive {
+	if created.User.Email != "new.user@example.com" || created.User.Name != "New User" || created.User.Language != users.LanguageEnglish || created.User.Role != users.RoleUser || created.User.Status != users.StatusActive {
 		t.Fatalf("created user = %+v, want normalized active user", created.User)
 	}
 
@@ -59,8 +61,10 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 	}
 
 	updateResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/admin/users/"+created.User.ID, admin.AccessToken, map[string]string{
-		"email": "renamed@example.com",
-		"role":  "admin",
+		"email":    "renamed@example.com",
+		"name":     "Renamed User",
+		"language": "zh-CN",
+		"role":     "admin",
 	})
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("update user status = %d, want 200, body = %s", updateResp.Code, updateResp.Body.String())
@@ -69,7 +73,7 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 		User users.User `json:"user"`
 	}
 	testutil.DecodeJSON(t, updateResp, &updated)
-	if updated.User.Email != "renamed@example.com" || updated.User.Role != users.RoleAdmin {
+	if updated.User.Email != "renamed@example.com" || updated.User.Name != "Renamed User" || updated.User.Language != users.LanguageChinese || updated.User.Role != users.RoleAdmin {
 		t.Fatalf("updated user = %+v, want renamed admin", updated.User)
 	}
 

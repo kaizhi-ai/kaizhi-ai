@@ -22,11 +22,13 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-this-admin-password
 KAIZHI_DATA_DIR=/data
 KAIZHI_PROXY_URL=
+KAIZHI_DEFAULT_LANGUAGE=zh-CN
 ```
 
 - `API_KEY_PEPPER`: must be a sufficiently long random value in production; do not change after deployment.
 - `KAIZHI_DATA_DIR`: runtime data directory (`config.yaml`, OAuth files, attachments, etc.).
 - `KAIZHI_PROXY_URL`: optional upstream proxy, routed through the built-in xray SOCKS5 outbound.
+- `KAIZHI_DEFAULT_LANGUAGE`: default language for newly created users. Supports `zh-CN` or `en-US`.
 
 ## Running
 

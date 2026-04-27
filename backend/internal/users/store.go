@@ -11,17 +11,35 @@ import (
 )
 
 type Store struct {
-	db *pgxpool.Pool
+	db              *pgxpool.Pool
+	defaultLanguage string
 }
 
-func NewStore(db *pgxpool.Pool) *Store {
-	return &Store{db: db}
+type StoreOption func(*Store)
+
+func WithDefaultLanguage(language string) StoreOption {
+	return func(s *Store) {
+		s.defaultLanguage = ResolveDefaultLanguage(language)
+	}
+}
+
+func NewStore(db *pgxpool.Pool, opts ...StoreOption) *Store {
+	store := &Store{
+		db:              db,
+		defaultLanguage: DefaultLanguage,
+	}
+	for _, opt := range opts {
+		opt(store)
+	}
+	return store
 }
 
 type UpdateUserParams struct {
-	Email  *string
-	Role   *string
-	Status *string
+	Email    *string
+	Name     *string
+	Language *string
+	Role     *string
+	Status   *string
 }
 
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*User, error) {
@@ -29,6 +47,10 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*Us
 }
 
 func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, role string) (*User, error) {
+	return s.CreateUserWithRoleAndProfile(ctx, email, passwordHash, role, "", "")
+}
+
+func (s *Store) CreateUserWithRoleAndProfile(ctx context.Context, email, passwordHash, role, name, language string) (*User, error) {
 	id, err := ids.New("usr")
 	if err != nil {
 		return nil, err
@@ -36,15 +58,26 @@ func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, rol
 	if role != RoleAdmin {
 		role = RoleUser
 	}
+	name, ok := NormalizeName(name)
+	if !ok {
+		name = ""
+	}
+	if normalized, ok := NormalizeLanguage(language); ok {
+		language = normalized
+	} else {
+		language = s.defaultLanguage
+	}
 
 	var user User
 	err = s.db.QueryRow(ctx, `
-		INSERT INTO users (id, email, password_hash, role)
-		VALUES ($1, $2, $3, $4)
-		RETURNING id, email, password_hash, status, role, created_at, updated_at
-	`, id, NormalizeEmail(email), passwordHash, role).Scan(
+		INSERT INTO users (id, email, name, password_hash, role, language)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id, email, name, language, password_hash, status, role, created_at, updated_at
+	`, id, NormalizeEmail(email), name, passwordHash, role, language).Scan(
 		&user.ID,
 		&user.Email,
+		&user.Name,
+		&user.Language,
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
@@ -63,7 +96,7 @@ func (s *Store) CreateUserWithRole(ctx context.Context, email, passwordHash, rol
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, email, password_hash, status, role, created_at, updated_at
+		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
 		FROM users
 		ORDER BY created_at DESC
 	`)
@@ -78,6 +111,8 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 		if err := rows.Scan(
 			&user.ID,
 			&user.Email,
+			&user.Name,
+			&user.Language,
 			&user.PasswordHash,
 			&user.Status,
 			&user.Role,
@@ -94,12 +129,14 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, status, role, created_at, updated_at
+		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
 		FROM users
 		WHERE email = $1
 	`, NormalizeEmail(email)).Scan(
 		&user.ID,
 		&user.Email,
+		&user.Name,
+		&user.Language,
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
@@ -131,7 +168,7 @@ func (s *Store) UpdatePasswordHash(ctx context.Context, id, passwordHash string)
 }
 
 func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserParams) (*User, error) {
-	if params.Email == nil && params.Role == nil && params.Status == nil {
+	if params.Email == nil && params.Name == nil && params.Language == nil && params.Role == nil && params.Status == nil {
 		return s.GetUserByID(ctx, id)
 	}
 
@@ -139,6 +176,18 @@ func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserPara
 	if params.Email != nil {
 		normalized := NormalizeEmail(*params.Email)
 		email = normalized
+	}
+	var name any
+	if params.Name != nil {
+		name = *params.Name
+	}
+	var language any
+	if params.Language != nil {
+		nextLanguage := DefaultLanguage
+		if normalized, ok := NormalizeLanguage(*params.Language); ok {
+			nextLanguage = normalized
+		}
+		language = nextLanguage
 	}
 	var role any
 	if params.Role != nil {
@@ -161,14 +210,18 @@ func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserPara
 	err := s.db.QueryRow(ctx, `
 		UPDATE users
 		SET email = COALESCE($2, email),
-		    role = COALESCE($3, role),
-		    status = COALESCE($4, status),
+		    name = COALESCE($3, name),
+		    language = COALESCE($4, language),
+		    role = COALESCE($5, role),
+		    status = COALESCE($6, status),
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, email, password_hash, status, role, created_at, updated_at
-	`, id, email, role, status).Scan(
+		RETURNING id, email, name, language, password_hash, status, role, created_at, updated_at
+	`, id, email, name, language, role, status).Scan(
 		&user.ID,
 		&user.Email,
+		&user.Name,
+		&user.Language,
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
@@ -209,12 +262,14 @@ func (s *Store) UpdateRole(ctx context.Context, id, role string) error {
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, password_hash, status, role, created_at, updated_at
+		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`, id).Scan(
 		&user.ID,
 		&user.Email,
+		&user.Name,
+		&user.Language,
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,

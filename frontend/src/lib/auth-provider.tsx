@@ -26,6 +26,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    document.documentElement.lang = user?.language || "zh-CN"
+  }, [user?.language])
+
   const refresh = useCallback(async () => {
     if (!getToken()) {
       setUser(null)

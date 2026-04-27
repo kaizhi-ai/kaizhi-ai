@@ -2,10 +2,13 @@ import { getToken } from "@/lib/auth-client"
 
 export type AdminUserRole = "user" | "admin"
 export type AdminUserStatus = "active" | "banned"
+export type AdminUserLanguage = "zh-CN" | "en-US"
 
 export type AdminUser = {
   id: string
   email: string
+  name: string
+  language: string
   status: AdminUserStatus | string
   role: AdminUserRole | string
   created_at: string
@@ -61,6 +64,8 @@ export async function listAdminUsers(): Promise<AdminUser[]> {
 
 export async function createAdminUser(input: {
   email: string
+  name?: string
+  language?: AdminUserLanguage | string | null
   password: string
   role: AdminUserRole
 }): Promise<AdminUser> {
@@ -68,6 +73,8 @@ export async function createAdminUser(input: {
     method: "POST",
     body: JSON.stringify({
       email: input.email.trim(),
+      name: input.name?.trim() ?? "",
+      language: input.language ?? null,
       password: input.password,
       role: input.role,
     }),
@@ -77,10 +84,17 @@ export async function createAdminUser(input: {
 
 export async function updateAdminUser(
   id: string,
-  input: { email?: string; role?: AdminUserRole }
+  input: {
+    email?: string
+    name?: string
+    language?: AdminUserLanguage | string
+    role?: AdminUserRole
+  }
 ): Promise<AdminUser> {
   const payload: Record<string, string> = {}
   if (input.email !== undefined) payload.email = input.email.trim()
+  if (input.name !== undefined) payload.name = input.name.trim()
+  if (input.language !== undefined) payload.language = input.language
   if (input.role !== undefined) payload.role = input.role
   const data = await request<{ user: AdminUser }>(userPath(id), {
     method: "PATCH",

@@ -3,9 +3,10 @@ import {
   ChevronsUpDown,
   KeyRound,
   LogOut,
+  Settings,
   Shield,
 } from "lucide-react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth-context"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -30,9 +31,11 @@ import {
 
 export function SettingsSidebar() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, signOut } = useAuth()
-  const displayName = user?.email?.split("@")[0] || "未登录"
-  const initial = (user?.email || "?").charAt(0).toUpperCase()
+  const displayName =
+    user?.name?.trim() || user?.email?.split("@")[0] || "未登录"
+  const initial = (displayName || user?.email || "?").charAt(0).toUpperCase()
 
   function handleSignOut() {
     signOut()
@@ -70,8 +73,18 @@ export function SettingsSidebar() {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
+                  tooltip="通用"
+                  isActive={location.pathname.startsWith("/settings/general")}
+                  onClick={() => navigate("/settings/general")}
+                >
+                  <Settings />
+                  <span>通用</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
                   tooltip="API Keys"
-                  isActive
+                  isActive={location.pathname.startsWith("/settings/api-keys")}
                   onClick={() => navigate("/settings/api-keys")}
                 >
                   <KeyRound />

@@ -72,10 +72,12 @@ func updateUserStatus(ctx context.Context, tx pgx.Tx, userID, status string) (*u
 		UPDATE users
 		SET status = $2, updated_at = now()
 		WHERE id = $1
-		RETURNING id, email, password_hash, status, role, created_at, updated_at
+		RETURNING id, email, name, language, password_hash, status, role, created_at, updated_at
 	`, userID, status).Scan(
 		&user.ID,
 		&user.Email,
+		&user.Name,
+		&user.Language,
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,

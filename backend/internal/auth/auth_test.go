@@ -24,6 +24,9 @@ func TestAuthLoginAndMe(t *testing.T) {
 	if loggedIn.User.ID != created.User.ID {
 		t.Fatalf("login user id = %q, want %q", loggedIn.User.ID, created.User.ID)
 	}
+	if loggedIn.User.Language != "zh-CN" {
+		t.Fatalf("login user language = %q, want zh-CN", loggedIn.User.Language)
+	}
 
 	meResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/auth/me", loggedIn.AccessToken, nil)
 	if meResp.Code != http.StatusOK {
@@ -38,6 +41,52 @@ func TestAuthLoginAndMe(t *testing.T) {
 	testutil.DecodeJSON(t, meResp, &meBody)
 	if meBody.User.ID != created.User.ID || meBody.User.Email != "user@example.com" {
 		t.Fatalf("me user = %+v, want created user", meBody.User)
+	}
+}
+
+func TestAuthUpdateMe(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	loggedIn := testutil.SeedUser(t, env, "profile@example.com", "password123")
+	updateResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/auth/me", loggedIn.AccessToken, map[string]string{
+		"name":     "  Kaizhi User  ",
+		"language": "en-US",
+	})
+	if updateResp.Code != http.StatusOK {
+		t.Fatalf("update me status = %d, body = %s", updateResp.Code, updateResp.Body.String())
+	}
+	var updateBody struct {
+		User struct {
+			Name     string `json:"name"`
+			Language string `json:"language"`
+		} `json:"user"`
+	}
+	testutil.DecodeJSON(t, updateResp, &updateBody)
+	if updateBody.User.Name != "Kaizhi User" || updateBody.User.Language != "en-US" {
+		t.Fatalf("updated profile = %+v, want trimmed name and en-US", updateBody.User)
+	}
+
+	meResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/auth/me", loggedIn.AccessToken, nil)
+	if meResp.Code != http.StatusOK {
+		t.Fatalf("me status = %d, body = %s", meResp.Code, meResp.Body.String())
+	}
+	var meBody struct {
+		User struct {
+			Name     string `json:"name"`
+			Language string `json:"language"`
+		} `json:"user"`
+	}
+	testutil.DecodeJSON(t, meResp, &meBody)
+	if meBody.User.Name != "Kaizhi User" || meBody.User.Language != "en-US" {
+		t.Fatalf("me profile = %+v, want persisted profile", meBody.User)
+	}
+
+	invalidResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/auth/me", loggedIn.AccessToken, map[string]string{
+		"language": "klingon",
+	})
+	if invalidResp.Code != http.StatusBadRequest {
+		t.Fatalf("invalid language status = %d, want 400, body = %s", invalidResp.Code, invalidResp.Body.String())
 	}
 }
 

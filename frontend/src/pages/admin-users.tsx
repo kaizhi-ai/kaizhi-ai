@@ -9,6 +9,7 @@ import {
   unbanAdminUser,
   updateAdminUser,
   type AdminUser,
+  type AdminUserLanguage,
   type AdminUserRole,
 } from "@/lib/admin-users-client"
 import { useAuth } from "@/lib/auth-context"
@@ -66,6 +67,11 @@ const dateFmt = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
 })
 
+const languageOptions: Array<{ value: AdminUserLanguage; label: string }> = [
+  { value: "zh-CN", label: "简体中文" },
+  { value: "en-US", label: "English" },
+]
+
 function generatePassword(length = 16) {
   const alphabet =
     "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%^&*"
@@ -86,7 +92,7 @@ function formatDate(value?: string) {
 }
 
 function displayName(user: AdminUser) {
-  return user.email.split("@")[0] || user.email
+  return user.name?.trim() || user.email.split("@")[0] || user.email
 }
 
 function roleValue(user: AdminUser): AdminUserRole {
@@ -95,6 +101,17 @@ function roleValue(user: AdminUser): AdminUserRole {
 
 function roleLabel(role: string) {
   return role === "admin" ? "管理员" : "普通用户"
+}
+
+function languageValue(language?: string): AdminUserLanguage {
+  return language === "en-US" ? "en-US" : "zh-CN"
+}
+
+function languageLabel(language?: string) {
+  return (
+    languageOptions.find((item) => item.value === languageValue(language))
+      ?.label ?? "简体中文"
+  )
 }
 
 type UserFilter = "active" | "banned"
@@ -124,6 +141,8 @@ export default function AdminUsersPage() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [email, setEmail] = useState("")
+  const [name, setName] = useState("")
+  const [language, setLanguage] = useState<AdminUserLanguage | null>(null)
   const [password, setPassword] = useState("")
   const [role, setRole] = useState<AdminUserRole>("user")
   const [createError, setCreateError] = useState<string | null>(null)
@@ -131,6 +150,8 @@ export default function AdminUsersPage() {
 
   const [editTarget, setEditTarget] = useState<AdminUser | null>(null)
   const [editEmail, setEditEmail] = useState("")
+  const [editName, setEditName] = useState("")
+  const [editLanguage, setEditLanguage] = useState<AdminUserLanguage>("zh-CN")
   const [editRole, setEditRole] = useState<AdminUserRole>("user")
   const [editError, setEditError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -177,6 +198,8 @@ export default function AdminUsersPage() {
 
   function resetCreateForm() {
     setEmail("")
+    setName("")
+    setLanguage(null)
     setPassword("")
     setRole("user")
     setCreateError(null)
@@ -187,7 +210,13 @@ export default function AdminUsersPage() {
     setCreateError(null)
     setCreating(true)
     try {
-      const created = await createAdminUser({ email, password, role })
+      const created = await createAdminUser({
+        email,
+        name,
+        language,
+        password,
+        role,
+      })
       setUsers((prev) => upsertUser(prev, created))
       resetCreateForm()
       setCreateOpen(false)
@@ -201,6 +230,8 @@ export default function AdminUsersPage() {
   function openEdit(target: AdminUser) {
     setEditTarget(target)
     setEditEmail(target.email)
+    setEditName(target.name ?? "")
+    setEditLanguage(languageValue(target.language))
     setEditRole(roleValue(target))
     setEditError(null)
   }
@@ -211,9 +242,19 @@ export default function AdminUsersPage() {
     setEditError(null)
     setEditing(true)
     try {
-      const payload: { email?: string; role?: AdminUserRole } = {}
+      const payload: {
+        email?: string
+        name?: string
+        language?: AdminUserLanguage
+        role?: AdminUserRole
+      } = {}
       const nextEmail = editEmail.trim()
+      const nextName = editName.trim()
       if (nextEmail && nextEmail !== editTarget.email) payload.email = nextEmail
+      if (nextName !== (editTarget.name ?? "")) payload.name = nextName
+      if (editLanguage !== languageValue(editTarget.language)) {
+        payload.language = editLanguage
+      }
       if (editRole !== roleValue(editTarget)) payload.role = editRole
 
       if (Object.keys(payload).length === 0) {
@@ -355,6 +396,17 @@ export default function AdminUsersPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="admin-user-name">名字</Label>
+                    <Input
+                      id="admin-user-name"
+                      autoComplete="off"
+                      maxLength={80}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
                     <Label htmlFor="admin-user-password">密码</Label>
                     <div className="flex gap-2">
                       <Input
@@ -385,7 +437,10 @@ export default function AdminUsersPage() {
                     <Label htmlFor="admin-user-role">角色</Label>
                     <Select
                       value={role}
-                      onValueChange={(value) => setRole(value as AdminUserRole)}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        setRole(value as AdminUserRole)
+                      }}
                     >
                       <SelectTrigger id="admin-user-role" className="w-full">
                         <SelectValue />
@@ -393,6 +448,30 @@ export default function AdminUsersPage() {
                       <SelectContent>
                         <SelectItem value="user">普通用户</SelectItem>
                         <SelectItem value="admin">管理员</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="admin-user-language">语言</Label>
+                    <Select
+                      value={language}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        setLanguage(value as AdminUserLanguage)
+                      }}
+                    >
+                      <SelectTrigger
+                        id="admin-user-language"
+                        className="w-full"
+                      >
+                        <SelectValue placeholder="默认语言" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {languageOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -423,11 +502,12 @@ export default function AdminUsersPage() {
       )}
 
       <div className="rounded-lg border">
-        <Table className="min-w-[760px]">
+        <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-44">用户</TableHead>
               <TableHead className="min-w-56">邮箱</TableHead>
+              <TableHead className="min-w-28">语言</TableHead>
               <TableHead className="min-w-24">角色</TableHead>
               <TableHead className="min-w-24">状态</TableHead>
               <TableHead className="min-w-40">创建时间</TableHead>
@@ -438,7 +518,7 @@ export default function AdminUsersPage() {
             {loading && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-10 text-center text-muted-foreground"
                 >
                   加载中...
@@ -456,6 +536,9 @@ export default function AdminUsersPage() {
                     </TableCell>
                     <TableCell className="max-w-80 truncate">
                       {item.email}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {languageLabel(item.language)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {roleLabel(item.role)}
@@ -521,7 +604,7 @@ export default function AdminUsersPage() {
             {!loading && filteredUsers.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="py-12 text-center text-muted-foreground"
                 >
                   {filter === "banned" ? "暂无封禁用户" : "暂无正常用户"}
@@ -542,7 +625,7 @@ export default function AdminUsersPage() {
           <form onSubmit={handleEdit} className="flex h-full flex-col gap-4">
             <SheetHeader>
               <SheetTitle>编辑用户</SheetTitle>
-              <SheetDescription>修改邮箱或角色。</SheetDescription>
+              <SheetDescription>修改名字、邮箱、语言或角色。</SheetDescription>
             </SheetHeader>
             <div className="flex flex-1 flex-col gap-4 px-4">
               <div className="flex flex-col gap-1.5">
@@ -558,10 +641,48 @@ export default function AdminUsersPage() {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-admin-user-name">名字</Label>
+                <Input
+                  id="edit-admin-user-name"
+                  autoComplete="off"
+                  maxLength={80}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-admin-user-language">语言</Label>
+                <Select
+                  value={editLanguage}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    setEditLanguage(value as AdminUserLanguage)
+                  }}
+                >
+                  <SelectTrigger
+                    id="edit-admin-user-language"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {languageOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
                 <Label htmlFor="edit-admin-user-role">角色</Label>
                 <Select
                   value={editRole}
-                  onValueChange={(value) => setEditRole(value as AdminUserRole)}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    setEditRole(value as AdminUserRole)
+                  }}
                   disabled={editTarget?.id === currentUserId}
                 >
                   <SelectTrigger id="edit-admin-user-role" className="w-full">

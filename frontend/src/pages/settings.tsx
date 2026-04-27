@@ -11,7 +11,7 @@ export default function SettingsPage() {
   const location = useLocation()
 
   if (location.pathname === "/settings") {
-    return <Navigate to="/settings/api-keys" replace />
+    return <Navigate to="/settings/general" replace />
   }
 
   return (

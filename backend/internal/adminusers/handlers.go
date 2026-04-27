@@ -22,6 +22,8 @@ type Handlers struct {
 type userResponse struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Language  string    `json:"language"`
 	Status    string    `json:"status"`
 	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
@@ -54,9 +56,11 @@ func (h *Handlers) list(c *gin.Context) {
 
 func (h *Handlers) create(c *gin.Context) {
 	var req struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
+		Email    string  `json:"email"`
+		Name     string  `json:"name"`
+		Language *string `json:"language"`
+		Password string  `json:"password"`
+		Role     string  `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -72,6 +76,19 @@ func (h *Handlers) create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 8 characters"})
 		return
 	}
+	name, ok := validateName(req.Name)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name must be at most 80 characters"})
+		return
+	}
+	language := ""
+	if req.Language != nil && strings.TrimSpace(*req.Language) != "" {
+		language, ok = validateLanguage(*req.Language)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "language must be zh-CN or en-US"})
+			return
+		}
+	}
 	role, ok := normalizeRole(req.Role, users.RoleUser)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "role must be user or admin"})
@@ -83,7 +100,7 @@ func (h *Handlers) create(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to hash password"})
 		return
 	}
-	user, err := h.userStore.CreateUserWithRole(c.Request.Context(), email, hash, role)
+	user, err := h.userStore.CreateUserWithRoleAndProfile(c.Request.Context(), email, hash, role, name, language)
 	if err != nil {
 		writeUserStoreError(c, err, "failed to create user")
 		return
@@ -95,8 +112,10 @@ func (h *Handlers) update(c *gin.Context) {
 	current := apikeys.CurrentUser(c)
 	targetID := c.Param("id")
 	var req struct {
-		Email *string `json:"email"`
-		Role  *string `json:"role"`
+		Email    *string `json:"email"`
+		Name     *string `json:"name"`
+		Language *string `json:"language"`
+		Role     *string `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -111,6 +130,22 @@ func (h *Handlers) update(c *gin.Context) {
 			return
 		}
 		params.Email = &email
+	}
+	if req.Name != nil {
+		name, ok := validateName(*req.Name)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "name must be at most 80 characters"})
+			return
+		}
+		params.Name = &name
+	}
+	if req.Language != nil {
+		language, ok := validateLanguage(*req.Language)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "language must be zh-CN or en-US"})
+			return
+		}
+		params.Language = &language
 	}
 	if req.Role != nil {
 		if current != nil && targetID == current.ID {
@@ -203,6 +238,8 @@ func publicUser(user *users.User) userResponse {
 	return userResponse{
 		ID:        user.ID,
 		Email:     user.Email,
+		Name:      user.Name,
+		Language:  user.Language,
 		Status:    user.Status,
 		Role:      user.Role,
 		CreatedAt: user.CreatedAt,
@@ -213,6 +250,14 @@ func publicUser(user *users.User) userResponse {
 func validateEmail(raw string) (string, bool) {
 	email := users.NormalizeEmail(raw)
 	return email, email != "" && len(email) <= 320 && strings.Contains(email, "@")
+}
+
+func validateName(raw string) (string, bool) {
+	return users.NormalizeName(raw)
+}
+
+func validateLanguage(raw string) (string, bool) {
+	return users.NormalizeLanguage(raw)
 }
 
 func normalizeRole(raw, fallback string) (string, bool) {

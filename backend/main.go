@@ -34,12 +34,13 @@ import (
 )
 
 const (
-	kaizhiDataDirEnv   = "KAIZHI_DATA_DIR"
-	kaizhiProxyURLEnv  = "KAIZHI_PROXY_URL"
-	defaultDataDirName = "data"
-	defaultConfigName  = "config.yaml"
-	defaultAuthDirName = "auths"
-	defaultMediaDir    = "media"
+	kaizhiDataDirEnv         = "KAIZHI_DATA_DIR"
+	kaizhiProxyURLEnv        = "KAIZHI_PROXY_URL"
+	kaizhiDefaultLanguageEnv = "KAIZHI_DEFAULT_LANGUAGE"
+	defaultDataDirName       = "data"
+	defaultConfigName        = "config.yaml"
+	defaultAuthDirName       = "auths"
+	defaultMediaDir          = "media"
 )
 
 func defaultCLIProxyConfig(authDir string) string {
@@ -114,7 +115,7 @@ func main() {
 	if err := postgres.EnsureSchema(ctx, db); err != nil {
 		log.Fatalf("ensure postgres schema: %v", err)
 	}
-	userStore := users.NewStore(db)
+	userStore := users.NewStore(db, users.WithDefaultLanguage(os.Getenv(kaizhiDefaultLanguageEnv)))
 
 	if adminEmail, adminPassword := os.Getenv("ADMIN_EMAIL"), os.Getenv("ADMIN_PASSWORD"); adminEmail != "" && adminPassword != "" {
 		action, err := users.EnsureAdmin(ctx, userStore, adminEmail, adminPassword)

@@ -38,8 +38,10 @@ type Env struct {
 type AuthResponse struct {
 	AccessToken string `json:"access_token"`
 	User        struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
+		ID       string `json:"id"`
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Language string `json:"language"`
 	} `json:"user"`
 	// SessionKeyID is populated by SeedUser only, since the login response does
 	// not surface the underlying api_key id. Tests that need to bind usage
@@ -156,6 +158,8 @@ func SeedUser(t *testing.T, env *Env, email, password string) AuthResponse {
 	body.SessionKeyID = session.ID
 	body.User.ID = user.ID
 	body.User.Email = user.Email
+	body.User.Name = user.Name
+	body.User.Language = user.Language
 	return body
 }
 

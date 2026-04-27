@@ -34,6 +34,7 @@ import {
 type AppSidebarProps = {
   chats: ChatSession[]
   activeChatId?: string
+  userName?: string
   userEmail?: string
   onNewChat: () => void
   onSelectChat: (id: string) => void
@@ -51,6 +52,7 @@ function displayTitle(chat: ChatSession) {
 export function AppSidebar({
   chats,
   activeChatId,
+  userName,
   userEmail,
   onNewChat,
   onSelectChat,
@@ -60,8 +62,8 @@ export function AppSidebar({
   onSignOut,
   isAdmin = false,
 }: AppSidebarProps) {
-  const displayName = userEmail?.split("@")[0] || "未登录"
-  const initial = (userEmail || "?").charAt(0).toUpperCase()
+  const displayName = userName?.trim() || userEmail?.split("@")[0] || "未登录"
+  const initial = (displayName || userEmail || "?").charAt(0).toUpperCase()
 
   return (
     <Sidebar collapsible="icon">
