@@ -32,5 +32,6 @@ export default defineConfig({
   build: {
     outDir: distDir,
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
   },
 })
