@@ -151,6 +151,125 @@ func TestPublicAuthFileUsesMetadataProxyURL(t *testing.T) {
 	}
 }
 
+func TestPatchAuthStatusTogglesDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := newMemoryAuthStore()
+	if _, err := store.Save(context.Background(), &coreauth.Auth{
+		ID:        "codex-test.json",
+		Provider:  "codex",
+		FileName:  "codex-test.json",
+		Status:    coreauth.StatusActive,
+		Metadata:  map[string]any{"type": "codex", "email": "test@example.com"},
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("save auth: %v", err)
+	}
+
+	handlers := NewHandlers(nil, nil, nil, store, nil)
+	router := gin.New()
+	router.PATCH("/:provider/status", handlers.patchAuthStatus)
+
+	disableResp := httptest.NewRecorder()
+	disableReq := httptest.NewRequest(http.MethodPatch, "/codex/status", strings.NewReader(`{"name":"codex-test.json","disabled":true}`))
+	disableReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(disableResp, disableReq)
+
+	if disableResp.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, body = %s, want 200", disableResp.Code, disableResp.Body.String())
+	}
+	disabledAuth, ok := store.get("codex-test.json")
+	if !ok {
+		t.Fatalf("disabled auth missing")
+	}
+	if !disabledAuth.Disabled || disabledAuth.Status != coreauth.StatusDisabled {
+		t.Fatalf("disabled auth = disabled:%v status:%v, want disabled true/status disabled", disabledAuth.Disabled, disabledAuth.Status)
+	}
+
+	enableResp := httptest.NewRecorder()
+	enableReq := httptest.NewRequest(http.MethodPatch, "/codex/status", strings.NewReader(`{"name":"codex-test.json","disabled":false}`))
+	enableReq.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(enableResp, enableReq)
+
+	if enableResp.Code != http.StatusOK {
+		t.Fatalf("enable status = %d, body = %s, want 200", enableResp.Code, enableResp.Body.String())
+	}
+	enabledAuth, ok := store.get("codex-test.json")
+	if !ok {
+		t.Fatalf("enabled auth missing")
+	}
+	if enabledAuth.Disabled || enabledAuth.Status != coreauth.StatusActive || enabledAuth.StatusMessage != "" {
+		t.Fatalf("enabled auth = disabled:%v status:%v message:%q, want active", enabledAuth.Disabled, enabledAuth.Status, enabledAuth.StatusMessage)
+	}
+}
+
+func TestPatchAuthStatusWithManagerDoesNotOverwriteStoredFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
+	store := newMemoryAuthStore()
+	if _, err := store.Save(ctx, &coreauth.Auth{
+		ID:       "codex-test.json",
+		Provider: "codex",
+		FileName: "codex-test.json",
+		Status:   coreauth.StatusActive,
+		Metadata: map[string]any{
+			"type":      "codex",
+			"email":     "test@example.com",
+			"proxy_url": "socks5://127.0.0.1:1080",
+		},
+		UpdatedAt: time.Now().Add(-time.Hour),
+	}); err != nil {
+		t.Fatalf("save auth: %v", err)
+	}
+
+	manager := coreauth.NewManager(store, nil, nil)
+	if _, err := manager.Register(coreauth.WithSkipPersist(ctx), &coreauth.Auth{
+		ID:        "codex-test.json",
+		Provider:  "codex",
+		FileName:  "codex-test.json",
+		Status:    coreauth.StatusActive,
+		Metadata:  map[string]any{"type": "codex", "email": "test@example.com"},
+		UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("register manager auth: %v", err)
+	}
+
+	handlers := NewHandlers(nil, nil, nil, store, manager)
+	router := gin.New()
+	router.PATCH("/:provider/status", handlers.patchAuthStatus)
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/codex/status", strings.NewReader(`{"name":"codex-test.json","disabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s, want 200", resp.Code, resp.Body.String())
+	}
+	storedAuth, ok := store.get("codex-test.json")
+	if !ok {
+		t.Fatalf("stored auth missing")
+	}
+	if storedAuth.Disabled != true || storedAuth.Status != coreauth.StatusDisabled {
+		t.Fatalf("stored auth = disabled:%v status:%v, want disabled true/status disabled", storedAuth.Disabled, storedAuth.Status)
+	}
+	if got, _ := storedAuth.Metadata["proxy_url"].(string); got != "socks5://127.0.0.1:1080" {
+		t.Fatalf("stored proxy_url = %q, want preserved proxy url", got)
+	}
+	if got, _ := storedAuth.Metadata["disabled"].(bool); !got {
+		t.Fatalf("stored metadata disabled = %v, want true", got)
+	}
+	managedAuth, ok := manager.GetByID("codex-test.json")
+	if !ok {
+		t.Fatalf("managed auth missing")
+	}
+	if !managedAuth.Disabled || managedAuth.Status != coreauth.StatusDisabled {
+		t.Fatalf("managed auth = disabled:%v status:%v, want disabled true/status disabled", managedAuth.Disabled, managedAuth.Status)
+	}
+	if got, _ := managedAuth.Metadata["disabled"].(bool); !got {
+		t.Fatalf("managed metadata disabled = %v, want true", got)
+	}
+}
+
 func TestStartOAuthStoresPendingProxyURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	requester := &fakeManagementRequester{}

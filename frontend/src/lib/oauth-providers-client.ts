@@ -107,3 +107,14 @@ export async function updateOAuthProviderProxyURL(
     body: JSON.stringify({ name, proxy_url: proxyUrl }),
   })
 }
+
+export async function updateOAuthProviderDisabled(
+  provider: OAuthProviderId,
+  name: string,
+  disabled: boolean
+): Promise<AuthFile> {
+  return request<AuthFile>(`${OAUTH_PROVIDER_PATH}/${provider}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ name, disabled }),
+  })
+}

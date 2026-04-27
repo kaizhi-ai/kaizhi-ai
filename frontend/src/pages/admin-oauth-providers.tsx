@@ -6,6 +6,8 @@ import {
   LogIn,
   MoreHorizontal,
   Plus,
+  Power,
+  PowerOff,
   Trash2,
 } from "lucide-react"
 
@@ -14,6 +16,7 @@ import {
   finishOAuthProvider,
   listOAuthProviders,
   startOAuthProvider,
+  updateOAuthProviderDisabled,
   updateOAuthProviderProxyURL,
   type AuthFile,
   type OAuthProviderId,
@@ -116,6 +119,36 @@ function fileTitle(file: AuthFile) {
   return file.email || file.label || file.name
 }
 
+function rowKey(row: Row) {
+  return `${row.provider}-${row.file.id || row.file.name}`
+}
+
+function statusLabel(file: AuthFile) {
+  if (file.disabled) return "已禁用"
+  switch (file.status) {
+    case "active":
+      return "正常"
+    case "pending":
+      return "等待中"
+    case "refreshing":
+      return "刷新中"
+    case "error":
+      return "异常"
+    case "disabled":
+      return "已禁用"
+    default:
+      return file.status || "-"
+  }
+}
+
+function statusClassName(file: AuthFile) {
+  if (file.disabled || file.status === "disabled") {
+    return "text-xs text-muted-foreground"
+  }
+  if (file.status === "error") return "text-xs text-destructive"
+  return "text-xs text-foreground"
+}
+
 export default function AdminOAuthProvidersPage() {
   const [filesByProvider, setFilesByProvider] =
     useState<FilesByProvider>(emptyFiles)
@@ -126,6 +159,9 @@ export default function AdminOAuthProvidersPage() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [proxyTarget, setProxyTarget] = useState<ProxyTarget | null>(null)
+  const [statusUpdatingKey, setStatusUpdatingKey] = useState<string | null>(
+    null
+  )
 
   async function refreshProvider(provider: OAuthProviderId) {
     const files = await listOAuthProviders(provider)
@@ -164,6 +200,29 @@ export default function AdminOAuthProvidersPage() {
       ),
     [filesByProvider]
   )
+
+  async function toggleDisabled(row: Row) {
+    const key = rowKey(row)
+    setStatusUpdatingKey(key)
+    setError(null)
+    try {
+      const updated = await updateOAuthProviderDisabled(
+        row.provider,
+        row.file.name,
+        !row.file.disabled
+      )
+      setFilesByProvider((prev) => ({
+        ...prev,
+        [row.provider]: prev[row.provider].map((file) =>
+          file.id === updated.id || file.name === updated.name ? updated : file
+        ),
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存状态失败")
+    } finally {
+      setStatusUpdatingKey(null)
+    }
+  }
 
   async function confirmDelete() {
     if (!deleteTarget) return
@@ -210,12 +269,13 @@ export default function AdminOAuthProvidersPage() {
         </div>
       )}
 
-      <div className="rounded-lg border">
-        <Table className="min-w-[760px]">
+      <div className="overflow-hidden rounded-lg border">
+        <Table className="min-w-[840px]">
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-44">类型</TableHead>
               <TableHead className="min-w-56">账号</TableHead>
+              <TableHead className="min-w-24">状态</TableHead>
               <TableHead className="min-w-24">代理</TableHead>
               <TableHead className="min-w-40">更新时间</TableHead>
               <TableHead className="w-12"></TableHead>
@@ -225,7 +285,7 @@ export default function AdminOAuthProvidersPage() {
             {loading && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="py-10 text-center text-muted-foreground"
                 >
                   加载中…
@@ -234,12 +294,21 @@ export default function AdminOAuthProvidersPage() {
             )}
             {!loading &&
               rows.map((row) => (
-                <TableRow key={`${row.provider}-${row.file.id}`}>
+                <TableRow
+                  key={rowKey(row)}
+                  className={row.file.disabled ? "bg-muted/20" : undefined}
+                >
                   <TableCell className="text-xs text-muted-foreground">
                     {PROVIDER_META[row.provider].label}
                   </TableCell>
                   <TableCell className="max-w-80 truncate font-medium">
                     {fileTitle(row.file)}
+                  </TableCell>
+                  <TableCell
+                    className={statusClassName(row.file)}
+                    title={row.file.status_message}
+                  >
+                    {statusLabel(row.file)}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     {proxyStatusLabel(row.file.proxy_url)}
@@ -261,6 +330,13 @@ export default function AdminOAuthProvidersPage() {
                         <MoreHorizontal />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={statusUpdatingKey === rowKey(row)}
+                          onClick={() => void toggleDisabled(row)}
+                        >
+                          {row.file.disabled ? <Power /> : <PowerOff />}
+                          {row.file.disabled ? "启用" : "禁用"}
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setProxyTarget(row)}>
                           编辑代理
                         </DropdownMenuItem>
@@ -280,7 +356,7 @@ export default function AdminOAuthProvidersPage() {
             {!loading && rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="py-12 text-center text-muted-foreground"
                 >
                   暂无 OAuth Provider

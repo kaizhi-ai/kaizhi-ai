@@ -74,6 +74,7 @@ func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
 	group.POST("/:provider/start", h.startOAuth)
 	group.POST("/:provider/finish", h.finishOAuth)
 	group.DELETE("/:provider", h.deleteAuthFile)
+	group.PATCH("/:provider/status", h.patchAuthStatus)
 	group.PATCH("/:provider/proxy", h.patchAuthProxyURL)
 
 	apiKeyGroup := engine.Group("/api/v1/api-key-provider")
@@ -275,6 +276,82 @@ func (h *Handlers) patchAuthProxyURL(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, publicAuthFile(next))
+}
+
+func (h *Handlers) patchAuthStatus(c *gin.Context) {
+	provider, ok := h.providerParam(c)
+	if !ok {
+		return
+	}
+	if h.authStore == nil && h.authManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "oauth store is not configured"})
+		return
+	}
+
+	var req struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Disabled *bool  `json:"disabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	name := firstNonEmpty(req.Name, req.ID)
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+	if req.Disabled == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disabled is required"})
+		return
+	}
+
+	record, ok, err := h.findProviderAuth(c.Request.Context(), provider, name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to find oauth provider"})
+		return
+	}
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "oauth provider not found"})
+		return
+	}
+
+	storeNext := record.Clone()
+	setAuthDisabled(storeNext, *req.Disabled)
+
+	response := storeNext
+	ctx := c.Request.Context()
+	if h.authStore != nil {
+		if _, err := h.authStore.Save(ctx, storeNext); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update oauth provider"})
+			return
+		}
+	}
+
+	managerNext := storeNext.Clone()
+	if h.authManager != nil {
+		if managed, ok := h.authManager.GetByID(record.ID); ok {
+			managerNext = managed.Clone()
+		}
+		setAuthDisabled(managerNext, *req.Disabled)
+	}
+
+	if h.authManager != nil {
+		managerCtx := ctx
+		if h.authStore != nil {
+			managerCtx = coreauth.WithSkipPersist(ctx)
+		}
+		if _, err := h.authManager.Update(managerCtx, managerNext); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update oauth provider"})
+			return
+		}
+		if h.authStore == nil {
+			response = managerNext
+		}
+	}
+
+	c.JSON(http.StatusOK, publicAuthFile(response))
 }
 
 type startOAuthRequest struct {
@@ -729,6 +806,25 @@ func setAuthProxyURL(auth *coreauth.Auth, proxyURL string) {
 		return
 	}
 	auth.Metadata["proxy_url"] = proxyURL
+}
+
+func setAuthDisabled(auth *coreauth.Auth, disabled bool) {
+	if auth == nil {
+		return
+	}
+	auth.Disabled = disabled
+	if auth.Metadata == nil {
+		auth.Metadata = make(map[string]any)
+	}
+	auth.Metadata["disabled"] = disabled
+	if disabled {
+		auth.Status = coreauth.StatusDisabled
+		auth.StatusMessage = "disabled via admin UI"
+	} else {
+		auth.Status = coreauth.StatusActive
+		auth.StatusMessage = ""
+	}
+	auth.UpdatedAt = time.Now().UTC()
 }
 
 func (h *Handlers) stateKey(c *gin.Context, provider string) string {
