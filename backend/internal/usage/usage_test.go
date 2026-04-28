@@ -78,6 +78,42 @@ func TestUsageEndpoints(t *testing.T) {
 	assertCost(t, usageByModelBody.Models[0].EstimatedCostUSD, 0.000058)
 }
 
+func TestUsageDateRangeUsesUTCDayBounds(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "usage-range@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage range key")
+	insideAt := time.Date(2026, time.April, 7, 23, 59, 59, 0, time.UTC)
+	outsideAt := time.Date(2026, time.April, 8, 0, 0, 0, 0, time.UTC)
+	insertUsageEventAt(t, env.UsageStore, user.User.ID, createdKey.ID, "range-boundary", insideAt, 11)
+	insertUsageEventAt(t, env.UsageStore, user.User.ID, createdKey.ID, "range-boundary", outsideAt, 29)
+
+	summary, err := env.UsageStore.GetSummary(context.Background(), user.User.ID, insideAt, insideAt)
+	if err != nil {
+		t.Fatalf("GetSummary() error = %v", err)
+	}
+	if summary.RequestCount != 1 || summary.TotalTokens != 11 {
+		t.Fatalf("summary = %+v, want only the event inside the UTC date", summary)
+	}
+
+	byKey, err := env.UsageStore.GetByAPIKey(context.Background(), user.User.ID, insideAt, insideAt)
+	if err != nil {
+		t.Fatalf("GetByAPIKey() error = %v", err)
+	}
+	if len(byKey) != 1 || byKey[0].APIKeyID != createdKey.ID || byKey[0].RequestCount != 1 || byKey[0].TotalTokens != 11 {
+		t.Fatalf("usage by key = %+v, want only the event inside the UTC date", byKey)
+	}
+
+	byModel, err := env.UsageStore.GetByModel(context.Background(), user.User.ID, insideAt, insideAt)
+	if err != nil {
+		t.Fatalf("GetByModel() error = %v", err)
+	}
+	if len(byModel) != 1 || byModel[0].Model != "range-boundary" || byModel[0].RequestCount != 1 || byModel[0].TotalTokens != 11 {
+		t.Fatalf("usage by model = %+v, want only the event inside the UTC date", byModel)
+	}
+}
+
 func TestUsageCostUsesEventTimePriceSnapshot(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
@@ -147,6 +183,35 @@ func TestUsageCostUsesEventTimePriceSnapshot(t *testing.T) {
 	assertCost(t, summary.EstimatedCostUSD, 0.000058)
 	if summary.UnpricedTokens != 0 {
 		t.Fatalf("unpriced tokens = %d, want 0", summary.UnpricedTokens)
+	}
+}
+
+func TestInsertEventUpdatesUserUsageWindows(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "usage-windows@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
+	reasoningPrice := "3"
+	if _, err := env.PriceStore.Create(context.Background(), modelprices.SaveParams{
+		Model:                  "gpt-test",
+		InputUSDPerMillion:     "1",
+		CacheReadUSDPerMillion: stringPtr("0.5"),
+		OutputUSDPerMillion:    "2",
+		ReasoningUSDPerMillion: &reasoningPrice,
+	}); err != nil {
+		t.Fatalf("create model price: %v", err)
+	}
+
+	testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, createdKey.ID)
+	reloaded, err := env.UserStore.GetUserByID(context.Background(), user.User.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID() error = %v", err)
+	}
+	assertCost(t, reloaded.Usage5HCostUSD, 0.000058)
+	assertCost(t, reloaded.Usage7DCostUSD, 0.000058)
+	if reloaded.Usage5HStartedAt.IsZero() || reloaded.Usage7DStartedAt.IsZero() {
+		t.Fatalf("usage window starts must be populated: %+v", reloaded)
 	}
 }
 
@@ -309,6 +374,31 @@ func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
 	testutil.DecodeJSON(t, byKeyResp, &byKeyBody)
 	if len(byKeyBody.APIKeys) != 0 {
 		t.Fatalf("usage by key = %+v, want session key hidden", byKeyBody.APIKeys)
+	}
+}
+
+func insertUsageEventAt(t *testing.T, store *appusage.Store, userID, apiKeyID, model string, requestedAt time.Time, totalTokens int64) {
+	t.Helper()
+	usageID, err := testutil.NewID("use")
+	if err != nil {
+		t.Fatalf("NewID(use) error = %v", err)
+	}
+	if err := store.InsertEvent(context.Background(), appusage.InsertEventParams{
+		ID:                usageID,
+		UserID:            userID,
+		APIKeyID:          apiKeyID,
+		Provider:          "openai",
+		Model:             model,
+		UpstreamAuthID:    "upstream-auth",
+		UpstreamAuthIndex: "upstream-index",
+		UpstreamAuthType:  "api-key",
+		Source:            "integration",
+		InputTokens:       totalTokens,
+		TotalTokens:       totalTokens,
+		LatencyMS:         123,
+		RequestedAt:       requestedAt,
+	}); err != nil {
+		t.Fatalf("InsertEvent() error = %v", err)
 	}
 }
 

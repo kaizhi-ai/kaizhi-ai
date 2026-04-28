@@ -20,14 +20,18 @@ type Handlers struct {
 }
 
 type userResponse struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Language  string    `json:"language"`
-	Status    string    `json:"status"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	Email            string    `json:"email"`
+	Name             string    `json:"name"`
+	Language         string    `json:"language"`
+	Status           string    `json:"status"`
+	Role             string    `json:"role"`
+	Usage5HCostUSD   string    `json:"usage_5h_cost_usd"`
+	Usage7DCostUSD   string    `json:"usage_7d_cost_usd"`
+	Usage5HStartedAt time.Time `json:"usage_5h_started_at"`
+	Usage7DStartedAt time.Time `json:"usage_7d_started_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func NewHandlers(userStore *users.Store, store *Store, apiKeys *apikeys.Service) *Handlers {
@@ -236,14 +240,18 @@ func publicUser(user *users.User) userResponse {
 		return userResponse{}
 	}
 	return userResponse{
-		ID:        user.ID,
-		Email:     user.Email,
-		Name:      user.Name,
-		Language:  user.Language,
-		Status:    user.Status,
-		Role:      user.Role,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		ID:               user.ID,
+		Email:            user.Email,
+		Name:             user.Name,
+		Language:         user.Language,
+		Status:           user.Status,
+		Role:             user.Role,
+		Usage5HCostUSD:   user.Usage5HCostUSD,
+		Usage7DCostUSD:   user.Usage7DCostUSD,
+		Usage5HStartedAt: user.Usage5HStartedAt,
+		Usage7DStartedAt: user.Usage7DStartedAt,
+		CreatedAt:        user.CreatedAt,
+		UpdatedAt:        user.UpdatedAt,
 	}
 }
 

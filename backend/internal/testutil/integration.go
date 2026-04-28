@@ -27,6 +27,7 @@ import (
 )
 
 type Env struct {
+	Pool        *pgxpool.Pool
 	UserStore   *users.Store
 	APIKeyStore *apikeys.Store
 	UsageStore  *appusage.Store
@@ -130,6 +131,7 @@ func Setup(t *testing.T) *Env {
 		adminPool.Close()
 	}
 	return &Env{
+		Pool:        pool,
 		UserStore:   userStore,
 		APIKeyStore: apiKeyStore,
 		UsageStore:  usageStore,

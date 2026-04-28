@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 
 	"kaizhi/backend/internal/modelprices"
 	"kaizhi/backend/internal/testutil"
+	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
 )
 
@@ -128,9 +130,11 @@ func TestAdminModelPricesListUnmatched(t *testing.T) {
 
 	admin := seedAdmin(t, env, "prices-unmatched@example.com")
 	key := testutil.CreateAPIKey(t, env.Router, admin.AccessToken, "usage key")
-	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, admin.User.ID, key.ID)
-	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")
-	to := requestedAt.AddDate(0, 0, 1).Format("2006-01-02")
+	requestedAt := time.Date(2026, time.April, 7, 23, 59, 59, 0, time.UTC)
+	insertUnmatchedUsageEventAt(t, env.UsageStore, admin.User.ID, key.ID, requestedAt, 33)
+	insertUnmatchedUsageEventAt(t, env.UsageStore, admin.User.ID, key.ID, requestedAt.Add(time.Second), 29)
+	from := requestedAt.Format("2006-01-02")
+	to := requestedAt.Format("2006-01-02")
 
 	resp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/model-prices/unmatched?from="+from+"&to="+to, admin.AccessToken, nil)
 	if resp.Code != http.StatusOK {
@@ -145,6 +149,31 @@ func TestAdminModelPricesListUnmatched(t *testing.T) {
 	testutil.DecodeJSON(t, resp, &body)
 	if len(body.Models) != 1 || body.Models[0].Model != "gpt-test" || body.Models[0].TotalTokens != 33 {
 		t.Fatalf("unmatched models = %+v, want gpt-test", body.Models)
+	}
+}
+
+func insertUnmatchedUsageEventAt(t *testing.T, store *appusage.Store, userID, apiKeyID string, requestedAt time.Time, totalTokens int64) {
+	t.Helper()
+	usageID, err := testutil.NewID("use")
+	if err != nil {
+		t.Fatalf("NewID(use) error = %v", err)
+	}
+	if err := store.InsertEvent(context.Background(), appusage.InsertEventParams{
+		ID:                usageID,
+		UserID:            userID,
+		APIKeyID:          apiKeyID,
+		Provider:          "openai",
+		Model:             "gpt-test",
+		UpstreamAuthID:    "upstream-auth",
+		UpstreamAuthIndex: "upstream-index",
+		UpstreamAuthType:  "api-key",
+		Source:            "integration",
+		InputTokens:       totalTokens,
+		TotalTokens:       totalTokens,
+		LatencyMS:         123,
+		RequestedAt:       requestedAt,
+	}); err != nil {
+		t.Fatalf("InsertEvent() error = %v", err)
 	}
 }
 

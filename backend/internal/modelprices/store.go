@@ -186,20 +186,21 @@ func (s *Store) ImportPrices(ctx context.Context, prices []SaveParams) (ImportRe
 func (s *Store) ListUnmatched(ctx context.Context, from, to time.Time) ([]UnmatchedModel, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT
-			ud.model,
-			SUM(ud.request_count),
-			SUM(ud.total_tokens),
-			MIN(ud.day),
-			MAX(ud.day)
-		FROM usage_daily ud
-		WHERE ud.day >= $1 AND ud.day <= $2
+			ue.model,
+			COUNT(*),
+			SUM(ue.total_tokens),
+			MIN((ue.requested_at AT TIME ZONE 'UTC')::date),
+			MAX((ue.requested_at AT TIME ZONE 'UTC')::date)
+		FROM usage_events ue
+		WHERE ue.requested_at >= ($1::date::timestamp AT TIME ZONE 'UTC')
+		  AND ue.requested_at < (($2::date + 1)::timestamp AT TIME ZONE 'UTC')
 		  AND NOT EXISTS (
 			SELECT 1
 			FROM model_prices mp
-			WHERE mp.model = ud.model
+			WHERE mp.model = ue.model
 		  )
-		GROUP BY ud.model
-		ORDER BY SUM(ud.total_tokens) DESC, ud.model ASC
+		GROUP BY ue.model
+		ORDER BY SUM(ue.total_tokens) DESC, ue.model ASC
 	`, dateOnly(from), dateOnly(to))
 	if err != nil {
 		return nil, err

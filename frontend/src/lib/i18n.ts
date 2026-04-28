@@ -268,7 +268,7 @@ const resources = {
         banned: "已封禁",
         bannedCount: "已封禁 {{count}}",
         banConfirmDescription:
-          "{{name}} ({{email}}) 将无法登录，现有会话会被吊销。",
+          "{{label}} 将无法登录，现有会话会被吊销。",
         banConfirmTitle: "封禁该用户？",
         banFailed: "封禁失败",
         banning: "封禁中...",
@@ -301,8 +301,10 @@ const resources = {
         totalUsers: "共 {{count}} 个用户",
         unban: "解除封禁",
         unbanFailed: "解除封禁失败",
+        usage5hQuota: "5h 额度",
+        usage7dQuota: "7d 额度",
         updatedAt: "更新时间",
-        user: "用户",
+        user: "名字",
         closePasswordDescription: "关闭后将不再显示。",
       },
       proxy: {
@@ -605,7 +607,7 @@ const resources = {
         banned: "Banned",
         bannedCount: "Banned {{count}}",
         banConfirmDescription:
-          "{{name}} ({{email}}) will be unable to sign in, and existing sessions will be revoked.",
+          "{{label}} will be unable to sign in, and existing sessions will be revoked.",
         banConfirmTitle: "Ban this user?",
         banFailed: "Ban failed",
         banning: "Banning...",
@@ -639,8 +641,10 @@ const resources = {
         totalUsers: "{{count}} users",
         unban: "Unban",
         unbanFailed: "Unban failed",
+        usage5hQuota: "5h quota",
+        usage7dQuota: "7d quota",
         updatedAt: "Updated",
-        user: "User",
+        user: "Name",
         closePasswordDescription: "It will not be shown again after closing.",
       },
       proxy: {

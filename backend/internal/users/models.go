@@ -21,15 +21,19 @@ const (
 )
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	Name         string    `json:"name"`
-	Language     string    `json:"language"`
-	PasswordHash string    `json:"-"`
-	Status       string    `json:"status"`
-	Role         string    `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID               string    `json:"id"`
+	Email            string    `json:"email"`
+	Name             string    `json:"name"`
+	Language         string    `json:"language"`
+	PasswordHash     string    `json:"-"`
+	Status           string    `json:"status"`
+	Role             string    `json:"role"`
+	Usage5HCostUSD   string    `json:"usage_5h_cost_usd"`
+	Usage7DCostUSD   string    `json:"usage_7d_cost_usd"`
+	Usage5HStartedAt time.Time `json:"usage_5h_started_at"`
+	Usage7DStartedAt time.Time `json:"usage_7d_started_at"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func NormalizeName(raw string) (string, bool) {

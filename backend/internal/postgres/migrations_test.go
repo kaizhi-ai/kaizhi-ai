@@ -17,8 +17,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrations() error = %v", err)
 	}
-	if len(migrations) != 3 {
-		t.Fatalf("len(migrations) = %d, want 3", len(migrations))
+	if len(migrations) != 4 {
+		t.Fatalf("len(migrations) = %d, want 4", len(migrations))
 	}
 
 	migration := migrations[0]
@@ -64,6 +64,18 @@ func TestLoadMigrations(t *testing.T) {
 			t.Fatalf("price migration SQL should not include removed column %s", removedColumn)
 		}
 	}
+
+	usageWindowMigration := migrations[3]
+	if usageWindowMigration.Version != "0004" {
+		t.Fatalf("usage window migration version = %q, want 0004", usageWindowMigration.Version)
+	}
+	if usageWindowMigration.Name != "user_usage_windows" {
+		t.Fatalf("usage window migration name = %q, want user_usage_windows", usageWindowMigration.Name)
+	}
+	if !strings.Contains(usageWindowMigration.SQL, "usage_5h_cost_usd") ||
+		!strings.Contains(usageWindowMigration.SQL, "DROP TABLE IF EXISTS usage_daily") {
+		t.Fatalf("usage window migration SQL does not include user counters and usage_daily drop")
+	}
 }
 
 func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
@@ -90,7 +102,6 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		"users",
 		"api_keys",
 		"usage_events",
-		"usage_daily",
 		"model_prices",
 		"chat_sessions",
 		"chat_messages",
@@ -104,7 +115,22 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		}
 	}
 
-	for _, column := range []string{"name", "language"} {
+	var usageDailyExists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('usage_daily') IS NOT NULL").Scan(&usageDailyExists); err != nil {
+		t.Fatalf("query usage_daily table: %v", err)
+	}
+	if usageDailyExists {
+		t.Fatalf("usage_daily should be dropped")
+	}
+
+	for _, column := range []string{
+		"name",
+		"language",
+		"usage_5h_cost_usd",
+		"usage_7d_cost_usd",
+		"usage_5h_started_at",
+		"usage_7d_started_at",
+	} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `
 			SELECT EXISTS (
@@ -153,10 +179,6 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		{table: "usage_events", column: "reasoning_usd_per_million_snapshot"},
 		{table: "usage_events", column: "estimated_cost_usd"},
 		{table: "usage_events", column: "price_missing"},
-		{table: "usage_daily", column: "cache_read_tokens"},
-		{table: "usage_daily", column: "cache_write_tokens"},
-		{table: "usage_daily", column: "estimated_cost_usd"},
-		{table: "usage_daily", column: "unpriced_tokens"},
 	} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `

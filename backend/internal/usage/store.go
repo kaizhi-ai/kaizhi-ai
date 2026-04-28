@@ -131,40 +131,31 @@ func (s *Store) InsertEvent(ctx context.Context, params InsertEventParams) error
 		return err
 	}
 
-	unpricedTokens := int64(0)
-	if priceMissing {
-		unpricedTokens = params.TotalTokens
-	}
-
 	_, err = tx.Exec(ctx, `
-		INSERT INTO usage_daily (
-			day, user_id, api_key_id, provider, model, request_count, failed_count,
-			input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens,
-			cached_tokens, total_tokens,
-			estimated_cost_usd, unpriced_tokens, updated_at
-		)
-		VALUES (
-			$1, $2, $3, $4, $5, 1, CASE WHEN $6 THEN 1 ELSE 0 END,
-			$7, $8, $9, $10, $11, $12, $13, $14::numeric, $15, now()
-		)
-		ON CONFLICT (day, user_id, api_key_id, provider, model)
-		DO UPDATE SET
-			request_count = usage_daily.request_count + 1,
-			failed_count = usage_daily.failed_count + EXCLUDED.failed_count,
-			input_tokens = usage_daily.input_tokens + EXCLUDED.input_tokens,
-			output_tokens = usage_daily.output_tokens + EXCLUDED.output_tokens,
-			reasoning_tokens = usage_daily.reasoning_tokens + EXCLUDED.reasoning_tokens,
-			cache_read_tokens = usage_daily.cache_read_tokens + EXCLUDED.cache_read_tokens,
-			cache_write_tokens = usage_daily.cache_write_tokens + EXCLUDED.cache_write_tokens,
-			cached_tokens = usage_daily.cached_tokens + EXCLUDED.cached_tokens,
-			total_tokens = usage_daily.total_tokens + EXCLUDED.total_tokens,
-			estimated_cost_usd = usage_daily.estimated_cost_usd + EXCLUDED.estimated_cost_usd,
-			unpriced_tokens = usage_daily.unpriced_tokens + EXCLUDED.unpriced_tokens,
-			updated_at = now()
-	`, params.RequestedAt.UTC().Format("2006-01-02"), params.UserID, params.APIKeyID, params.Provider,
-		params.Model, params.Failed, params.InputTokens, params.OutputTokens, params.ReasoningTokens,
-		params.CacheReadTokens, params.CacheWriteTokens, params.CachedTokens, params.TotalTokens,
-		estimatedCostUSD, unpricedTokens)
+		UPDATE users
+		SET
+			usage_5h_cost_usd = CASE
+				WHEN $2::timestamptz < usage_5h_started_at THEN usage_5h_cost_usd
+				WHEN $2::timestamptz >= usage_5h_started_at + interval '5 hours' THEN $3::numeric
+				ELSE usage_5h_cost_usd + $3::numeric
+			END,
+			usage_5h_started_at = CASE
+				WHEN $2::timestamptz < usage_5h_started_at THEN usage_5h_started_at
+				WHEN $2::timestamptz >= usage_5h_started_at + interval '5 hours' THEN $2::timestamptz
+				ELSE usage_5h_started_at
+			END,
+			usage_7d_cost_usd = CASE
+				WHEN $2::timestamptz < usage_7d_started_at THEN usage_7d_cost_usd
+				WHEN $2::timestamptz >= usage_7d_started_at + interval '7 days' THEN $3::numeric
+				ELSE usage_7d_cost_usd + $3::numeric
+			END,
+			usage_7d_started_at = CASE
+				WHEN $2::timestamptz < usage_7d_started_at THEN usage_7d_started_at
+				WHEN $2::timestamptz >= usage_7d_started_at + interval '7 days' THEN $2::timestamptz
+				ELSE usage_7d_started_at
+			END
+		WHERE id = $1
+	`, params.UserID, params.RequestedAt, estimatedCostUSD)
 	if err != nil {
 		return err
 	}
@@ -176,8 +167,8 @@ func (s *Store) GetSummary(ctx context.Context, userID string, from, to time.Tim
 	var summary Summary
 	err := s.db.QueryRow(ctx, `
 		SELECT
-			COALESCE(SUM(request_count), 0),
-			COALESCE(SUM(failed_count), 0),
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN failed THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(input_tokens), 0),
 			COALESCE(SUM(output_tokens), 0),
 			COALESCE(SUM(reasoning_tokens), 0),
@@ -186,10 +177,12 @@ func (s *Store) GetSummary(ctx context.Context, userID string, from, to time.Tim
 			COALESCE(SUM(cached_tokens), 0),
 			COALESCE(SUM(total_tokens), 0),
 			COALESCE(SUM(estimated_cost_usd), 0)::text,
-			COALESCE(SUM(unpriced_tokens), 0)
-		FROM usage_daily
-		WHERE user_id = $1 AND day >= $2 AND day <= $3
-	`, userID, from.Format("2006-01-02"), to.Format("2006-01-02")).Scan(
+			COALESCE(SUM(CASE WHEN price_missing THEN total_tokens ELSE 0 END), 0)
+		FROM usage_events
+		WHERE user_id = $1
+		  AND requested_at >= ($2::date::timestamp AT TIME ZONE 'UTC')
+		  AND requested_at < (($3::date + 1)::timestamp AT TIME ZONE 'UTC')
+	`, userID, dateOnly(from), dateOnly(to)).Scan(
 		&summary.RequestCount,
 		&summary.FailedCount,
 		&summary.InputTokens,
@@ -214,16 +207,17 @@ func (s *Store) GetByAPIKey(ctx context.Context, userID string, from, to time.Ti
 			ak.id,
 			ak.name,
 			ak.key_prefix,
-			COALESCE(SUM(ud.request_count), 0),
-			COALESCE(SUM(ud.failed_count), 0),
-			COALESCE(SUM(ud.total_tokens), 0)
+			COUNT(ue.id),
+			COALESCE(SUM(CASE WHEN ue.failed THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(ue.total_tokens), 0)
 		FROM api_keys ak
-		LEFT JOIN usage_daily ud ON ud.api_key_id = ak.id
-			AND ud.day >= $2 AND ud.day <= $3
+		LEFT JOIN usage_events ue ON ue.api_key_id = ak.id
+			AND ue.requested_at >= ($2::date::timestamp AT TIME ZONE 'UTC')
+			AND ue.requested_at < (($3::date + 1)::timestamp AT TIME ZONE 'UTC')
 		WHERE ak.user_id = $1 AND ak.kind = 'user'
 		GROUP BY ak.id, ak.name, ak.key_prefix
-		ORDER BY COALESCE(SUM(ud.total_tokens), 0) DESC, ak.created_at DESC
-	`, userID, from.Format("2006-01-02"), to.Format("2006-01-02"))
+		ORDER BY COALESCE(SUM(ue.total_tokens), 0) DESC, ak.created_at DESC
+	`, userID, dateOnly(from), dateOnly(to))
 	if err != nil {
 		return nil, err
 	}
@@ -252,8 +246,8 @@ func (s *Store) GetByModel(ctx context.Context, userID string, from, to time.Tim
 		SELECT
 			provider,
 			model,
-			SUM(request_count),
-			SUM(failed_count),
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN failed THEN 1 ELSE 0 END), 0),
 			SUM(input_tokens),
 			SUM(output_tokens),
 			SUM(reasoning_tokens),
@@ -262,13 +256,15 @@ func (s *Store) GetByModel(ctx context.Context, userID string, from, to time.Tim
 			SUM(cached_tokens),
 			SUM(total_tokens),
 			COALESCE(SUM(estimated_cost_usd), 0)::text,
-			BOOL_OR(unpriced_tokens > 0),
-			COALESCE(SUM(unpriced_tokens), 0)
-		FROM usage_daily
-		WHERE user_id = $1 AND day >= $2 AND day <= $3
+			BOOL_OR(price_missing),
+			COALESCE(SUM(CASE WHEN price_missing THEN total_tokens ELSE 0 END), 0)
+		FROM usage_events
+		WHERE user_id = $1
+		  AND requested_at >= ($2::date::timestamp AT TIME ZONE 'UTC')
+		  AND requested_at < (($3::date + 1)::timestamp AT TIME ZONE 'UTC')
 		GROUP BY provider, model
 		ORDER BY SUM(total_tokens) DESC
-	`, userID, from.Format("2006-01-02"), to.Format("2006-01-02"))
+	`, userID, dateOnly(from), dateOnly(to))
 	if err != nil {
 		return nil, err
 	}
@@ -298,4 +294,8 @@ func (s *Store) GetByModel(ctx context.Context, userID string, from, to time.Tim
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func dateOnly(t time.Time) string {
+	return t.UTC().Format("2006-01-02")
 }

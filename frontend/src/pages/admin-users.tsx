@@ -80,8 +80,20 @@ function formatDate(value: string | undefined, dateFmt: Intl.DateTimeFormat) {
   return dateFmt.format(date)
 }
 
+function formatUSD(value: string | undefined, fmt: Intl.NumberFormat) {
+  if (!value) return "-"
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) return "-"
+  return fmt.format(amount)
+}
+
 function displayName(user: AdminUser) {
-  return user.name?.trim() || user.email.split("@")[0] || user.email
+  return user.name?.trim() || "-"
+}
+
+function accountLabel(user: AdminUser) {
+  const name = user.name?.trim()
+  return name ? `${name} (${user.email})` : user.email
 }
 
 function roleValue(user: AdminUser): AdminUserRole {
@@ -118,6 +130,16 @@ export default function AdminUsersPage() {
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
+      }),
+    [i18n.language]
+  )
+  const usdFmt = useMemo(
+    () =>
+      new Intl.NumberFormat(i18n.language, {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 6,
       }),
     [i18n.language]
   )
@@ -510,21 +532,25 @@ export default function AdminUsersPage() {
       )}
 
       <div className="rounded-lg border">
-        <Table className="min-w-[840px]">
+        <Table className="min-w-5xl table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="min-w-44">{t("adminUsers.user")}</TableHead>
-              <TableHead className="min-w-56">
+              <TableHead className="w-32">
+                {t("adminUsers.user")}
+              </TableHead>
+              <TableHead className="w-72">
                 {t("adminUsers.email")}
               </TableHead>
-              <TableHead className="min-w-28">
-                {t("settings.language")}
+              <TableHead className="w-20">
+                {t("adminUsers.role")}
               </TableHead>
-              <TableHead className="min-w-24">{t("adminUsers.role")}</TableHead>
-              <TableHead className="min-w-24">
-                {t("adminUsers.status")}
+              <TableHead className="w-32 text-right">
+                {t("adminUsers.usage5hQuota")}
               </TableHead>
-              <TableHead className="min-w-40">
+              <TableHead className="w-32 text-right">
+                {t("adminUsers.usage7dQuota")}
+              </TableHead>
+              <TableHead className="w-40">
                 {t("common.createdAt")}
               </TableHead>
               <TableHead className="w-12"></TableHead>
@@ -547,35 +573,22 @@ export default function AdminUsersPage() {
                 const isBanned = isBannedUser(item)
                 return (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="truncate font-medium">
                       {displayName(item)}
                     </TableCell>
-                    <TableCell className="max-w-80 truncate">
+                    <TableCell className="truncate">
                       {item.email}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {t(
-                        languageOptions.find(
-                          (option) =>
-                            option.value === languageValue(item.language)
-                        )?.labelKey ?? "languages.zhCN"
-                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {roleValue(item) === "admin"
                         ? t("adminUsers.roleAdmin")
                         : t("adminUsers.roleUser")}
                     </TableCell>
-                    <TableCell>
-                      {isBanned ? (
-                        <span className="text-destructive">
-                          {t("adminUsers.banned")}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          {t("adminUsers.normal")}
-                        </span>
-                      )}
+                    <TableCell className="text-right text-muted-foreground tabular-nums">
+                      {formatUSD(item.usage_5h_cost_usd, usdFmt)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">
+                      {formatUSD(item.usage_7d_cost_usd, usdFmt)}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDate(item.created_at, dateFmt)}
@@ -808,9 +821,7 @@ export default function AdminUsersPage() {
               <SheetHeader>
                 <SheetTitle>{t("adminUsers.resetPassword")}</SheetTitle>
                 <SheetDescription>
-                  {pwdTarget
-                    ? `${displayName(pwdTarget)} (${pwdTarget.email})`
-                    : null}
+                  {pwdTarget ? accountLabel(pwdTarget) : null}
                 </SheetDescription>
               </SheetHeader>
               <div className="flex flex-1 flex-col gap-4 px-4">
@@ -876,8 +887,7 @@ export default function AdminUsersPage() {
             <AlertDialogDescription>
               {banTarget
                 ? t("adminUsers.banConfirmDescription", {
-                    name: displayName(banTarget),
-                    email: banTarget.email,
+                    label: accountLabel(banTarget),
                   })
                 : null}
             </AlertDialogDescription>

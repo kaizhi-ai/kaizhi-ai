@@ -42,6 +42,20 @@ type UpdateUserParams struct {
 	Status   *string
 }
 
+const NormalizedUserColumnsSQL = `
+	id, email, name, language, password_hash, status, role,
+	CASE
+		WHEN now() >= usage_5h_started_at + interval '5 hours' THEN 0::numeric(30, 12)
+		ELSE usage_5h_cost_usd
+	END::text,
+	CASE
+		WHEN now() >= usage_7d_started_at + interval '7 days' THEN 0::numeric(30, 12)
+		ELSE usage_7d_cost_usd
+	END::text,
+	usage_5h_started_at, usage_7d_started_at,
+	created_at, updated_at
+`
+
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash string) (*User, error) {
 	return s.CreateUserWithRole(ctx, email, passwordHash, RoleUser)
 }
@@ -72,7 +86,7 @@ func (s *Store) CreateUserWithRoleAndProfile(ctx context.Context, email, passwor
 	err = s.db.QueryRow(ctx, `
 		INSERT INTO users (id, email, name, password_hash, role, language)
 		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, email, name, language, password_hash, status, role, created_at, updated_at
+		RETURNING `+NormalizedUserColumnsSQL+`
 	`, id, NormalizeEmail(email), name, passwordHash, role, language).Scan(
 		&user.ID,
 		&user.Email,
@@ -81,6 +95,10 @@ func (s *Store) CreateUserWithRoleAndProfile(ctx context.Context, email, passwor
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
+		&user.Usage5HCostUSD,
+		&user.Usage7DCostUSD,
+		&user.Usage5HStartedAt,
+		&user.Usage7DStartedAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -96,7 +114,7 @@ func (s *Store) CreateUserWithRoleAndProfile(ctx context.Context, email, passwor
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	rows, err := s.db.Query(ctx, `
-		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
+		SELECT `+NormalizedUserColumnsSQL+`
 		FROM users
 		ORDER BY created_at DESC
 	`)
@@ -116,6 +134,10 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 			&user.PasswordHash,
 			&user.Status,
 			&user.Role,
+			&user.Usage5HCostUSD,
+			&user.Usage7DCostUSD,
+			&user.Usage5HStartedAt,
+			&user.Usage7DStartedAt,
 			&user.CreatedAt,
 			&user.UpdatedAt,
 		); err != nil {
@@ -129,7 +151,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
+		SELECT `+NormalizedUserColumnsSQL+`
 		FROM users
 		WHERE email = $1
 	`, NormalizeEmail(email)).Scan(
@@ -140,6 +162,10 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*User, error)
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
+		&user.Usage5HCostUSD,
+		&user.Usage7DCostUSD,
+		&user.Usage5HStartedAt,
+		&user.Usage7DStartedAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -216,7 +242,7 @@ func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserPara
 		    status = COALESCE($6, status),
 		    updated_at = now()
 		WHERE id = $1
-		RETURNING id, email, name, language, password_hash, status, role, created_at, updated_at
+		RETURNING `+NormalizedUserColumnsSQL+`
 	`, id, email, name, language, role, status).Scan(
 		&user.ID,
 		&user.Email,
@@ -225,6 +251,10 @@ func (s *Store) UpdateUser(ctx context.Context, id string, params UpdateUserPara
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
+		&user.Usage5HCostUSD,
+		&user.Usage7DCostUSD,
+		&user.Usage5HStartedAt,
+		&user.Usage7DStartedAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -262,7 +292,7 @@ func (s *Store) UpdateRole(ctx context.Context, id, role string) error {
 func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(ctx, `
-		SELECT id, email, name, language, password_hash, status, role, created_at, updated_at
+		SELECT `+NormalizedUserColumnsSQL+`
 		FROM users
 		WHERE id = $1
 	`, id).Scan(
@@ -273,6 +303,10 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*User, error) {
 		&user.PasswordHash,
 		&user.Status,
 		&user.Role,
+		&user.Usage5HCostUSD,
+		&user.Usage7DCostUSD,
+		&user.Usage5HStartedAt,
+		&user.Usage7DStartedAt,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)

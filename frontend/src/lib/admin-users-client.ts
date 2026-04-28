@@ -12,6 +12,10 @@ export type AdminUser = {
   language: string
   status: AdminUserStatus | string
   role: AdminUserRole | string
+  usage_5h_cost_usd: string
+  usage_7d_cost_usd: string
+  usage_5h_started_at: string
+  usage_7d_started_at: string
   created_at: string
   updated_at: string
 }

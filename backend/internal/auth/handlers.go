@@ -117,13 +117,17 @@ func (h *Handlers) publicUser(user *users.User) gin.H {
 		return gin.H{}
 	}
 	return gin.H{
-		"id":         user.ID,
-		"email":      user.Email,
-		"name":       user.Name,
-		"language":   user.Language,
-		"status":     user.Status,
-		"role":       user.Role,
-		"created_at": user.CreatedAt,
-		"updated_at": user.UpdatedAt,
+		"id":                  user.ID,
+		"email":               user.Email,
+		"name":                user.Name,
+		"language":            user.Language,
+		"status":              user.Status,
+		"role":                user.Role,
+		"usage_5h_cost_usd":   user.Usage5HCostUSD,
+		"usage_7d_cost_usd":   user.Usage7DCostUSD,
+		"usage_5h_started_at": user.Usage5HStartedAt,
+		"usage_7d_started_at": user.Usage7DStartedAt,
+		"created_at":          user.CreatedAt,
+		"updated_at":          user.UpdatedAt,
 	}
 }
