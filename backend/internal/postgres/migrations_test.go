@@ -17,8 +17,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrations() error = %v", err)
 	}
-	if len(migrations) != 2 {
-		t.Fatalf("len(migrations) = %d, want 2", len(migrations))
+	if len(migrations) != 3 {
+		t.Fatalf("len(migrations) = %d, want 3", len(migrations))
 	}
 
 	migration := migrations[0]
@@ -44,6 +44,25 @@ func TestLoadMigrations(t *testing.T) {
 	}
 	if !strings.Contains(profileMigration.SQL, "ADD COLUMN IF NOT EXISTS language") {
 		t.Fatalf("profile migration SQL does not include language column")
+	}
+
+	priceMigration := migrations[2]
+	if priceMigration.Version != "0003" {
+		t.Fatalf("price migration version = %q, want 0003", priceMigration.Version)
+	}
+	if priceMigration.Name != "model_prices" {
+		t.Fatalf("price migration name = %q, want model_prices", priceMigration.Name)
+	}
+	if !strings.Contains(priceMigration.SQL, "CREATE TABLE IF NOT EXISTS model_prices") {
+		t.Fatalf("price migration SQL does not include model_prices table")
+	}
+	if !strings.Contains(priceMigration.SQL, "input_usd_per_million_snapshot") {
+		t.Fatalf("price migration SQL does not include usage price snapshots")
+	}
+	for _, removedColumn := range []string{"cached_input_usd_per_million", "image_input_usd_per_million", "image_output_usd_per_million", "web_search_usd_per_1k"} {
+		if strings.Contains(priceMigration.SQL, removedColumn) {
+			t.Fatalf("price migration SQL should not include removed column %s", removedColumn)
+		}
 	}
 }
 
@@ -72,6 +91,7 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		"api_keys",
 		"usage_events",
 		"usage_daily",
+		"model_prices",
 		"chat_sessions",
 		"chat_messages",
 	} {
@@ -99,6 +119,59 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		}
 		if !exists {
 			t.Fatalf("users.%s column was not created", column)
+		}
+	}
+
+	for _, column := range []string{"image_input_usd_per_million", "image_output_usd_per_million", "web_search_usd_per_1k"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = current_schema()
+				  AND table_name = 'model_prices'
+				  AND column_name = $1
+			)
+		`, column).Scan(&exists); err != nil {
+			t.Fatalf("query model_prices.%s column: %v", column, err)
+		}
+		if exists {
+			t.Fatalf("model_prices.%s column should be dropped", column)
+		}
+	}
+
+	for _, check := range []struct {
+		table  string
+		column string
+	}{
+		{table: "usage_events", column: "input_usd_per_million_snapshot"},
+		{table: "usage_events", column: "cache_read_tokens"},
+		{table: "usage_events", column: "cache_write_tokens"},
+		{table: "usage_events", column: "cache_read_usd_per_million_snapshot"},
+		{table: "usage_events", column: "cache_write_usd_per_million_snapshot"},
+		{table: "usage_events", column: "output_usd_per_million_snapshot"},
+		{table: "usage_events", column: "reasoning_usd_per_million_snapshot"},
+		{table: "usage_events", column: "estimated_cost_usd"},
+		{table: "usage_events", column: "price_missing"},
+		{table: "usage_daily", column: "cache_read_tokens"},
+		{table: "usage_daily", column: "cache_write_tokens"},
+		{table: "usage_daily", column: "estimated_cost_usd"},
+		{table: "usage_daily", column: "unpriced_tokens"},
+	} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM information_schema.columns
+				WHERE table_schema = current_schema()
+				  AND table_name = $1
+				  AND column_name = $2
+			)
+		`, check.table, check.column).Scan(&exists); err != nil {
+			t.Fatalf("query %s.%s column: %v", check.table, check.column, err)
+		}
+		if !exists {
+			t.Fatalf("%s.%s column was not created", check.table, check.column)
 		}
 	}
 }

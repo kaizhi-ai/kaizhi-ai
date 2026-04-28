@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ChevronsUpDown,
+  DollarSign,
   Globe,
   KeyRound,
   LogIn,
@@ -83,6 +84,16 @@ export function AdminSidebar() {
                 >
                   <Users />
                   <span>{t("nav.userManagement")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={t("nav.modelPrices")}
+                  isActive={location.pathname.startsWith("/admin/model-prices")}
+                  onClick={() => navigate("/admin/model-prices")}
+                >
+                  <DollarSign />
+                  <span>{t("nav.modelPrices")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

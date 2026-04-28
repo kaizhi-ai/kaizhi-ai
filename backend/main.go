@@ -25,6 +25,7 @@ import (
 	"kaizhi/backend/internal/apikeys"
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
+	"kaizhi/backend/internal/modelprices"
 	"kaizhi/backend/internal/postgres"
 	"kaizhi/backend/internal/provider"
 	appusage "kaizhi/backend/internal/usage"
@@ -136,6 +137,7 @@ func main() {
 	apiKeyStore := apikeys.NewStore(db)
 	usageStore := appusage.NewStore(db)
 	chatStore := chats.NewStore(db)
+	modelPriceStore := modelprices.NewStore(db)
 
 	apiKeyService, err := apikeys.NewService(apiKeyStore, os.Getenv("API_KEY_PEPPER"))
 	if err != nil {
@@ -147,6 +149,7 @@ func main() {
 	adminUserHandlers := adminusers.NewHandlers(userStore, adminusers.NewStore(db), apiKeyService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)
 	usageHandlers := appusage.NewHandlers(usageStore, userStore, apiKeyService)
+	modelPriceHandlers := modelprices.NewHandlers(modelPriceStore, userStore, apiKeyService)
 	mediaRoot := filepath.Join(defaultDataDirName, defaultMediaDir)
 	if dataDirConfigured {
 		mediaRoot = filepath.Join(dataDir, defaultMediaDir)
@@ -216,6 +219,7 @@ func main() {
 				adminUserHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
+				modelPriceHandlers.RegisterRoutes(engine)
 				chatHandlers.RegisterRoutes(engine)
 				providerOAuthHandlers.RegisterRoutes(engine)
 				engine.NoRoute(web.NoRouteHandler())

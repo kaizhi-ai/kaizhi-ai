@@ -1,9 +1,14 @@
 package usage_test
 
 import (
+	"context"
+	"math"
 	"net/http"
+	"strconv"
 	"testing"
+	"time"
 
+	"kaizhi/backend/internal/modelprices"
 	"kaizhi/backend/internal/testutil"
 	appusage "kaizhi/backend/internal/usage"
 )
@@ -14,6 +19,16 @@ func TestUsageEndpoints(t *testing.T) {
 
 	user := testutil.SeedUser(t, env, "usage@example.com", "password123")
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
+	reasoningPrice := "3"
+	if _, err := env.PriceStore.Create(context.Background(), modelprices.SaveParams{
+		Model:                  "gpt-test",
+		InputUSDPerMillion:     "1",
+		CacheReadUSDPerMillion: stringPtr("0.5"),
+		OutputUSDPerMillion:    "2",
+		ReasoningUSDPerMillion: &reasoningPrice,
+	}); err != nil {
+		t.Fatalf("create model price: %v", err)
+	}
 	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, createdKey.ID)
 	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")
 	to := requestedAt.AddDate(0, 0, 1).Format("2006-01-02")
@@ -26,8 +41,12 @@ func TestUsageEndpoints(t *testing.T) {
 		Usage appusage.Summary `json:"usage"`
 	}
 	testutil.DecodeJSON(t, usageResp, &usageBody)
-	if usageBody.Usage.RequestCount != 1 || usageBody.Usage.TotalTokens != 33 {
-		t.Fatalf("usage summary = %+v, want 1 request and 33 tokens", usageBody.Usage)
+	if usageBody.Usage.RequestCount != 1 || usageBody.Usage.TotalTokens != 33 || usageBody.Usage.UnpricedTokens != 0 {
+		t.Fatalf("usage summary = %+v, want 1 request, 33 tokens and priced usage", usageBody.Usage)
+	}
+	assertCost(t, usageBody.Usage.EstimatedCostUSD, 0.000058)
+	if usageBody.Usage.EstimatedCostUSD == "" {
+		t.Fatalf("usage summary estimated cost is empty")
 	}
 
 	usageByKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
@@ -53,6 +72,207 @@ func TestUsageEndpoints(t *testing.T) {
 	if len(usageByModelBody.Models) != 1 || usageByModelBody.Models[0].Model != "gpt-test" || usageByModelBody.Models[0].TotalTokens != 33 {
 		t.Fatalf("usage by model = %+v, want gpt-test with 33 tokens", usageByModelBody.Models)
 	}
+	if usageByModelBody.Models[0].PriceMissing || usageByModelBody.Models[0].UnpricedTokens != 0 {
+		t.Fatalf("usage by model price flags = %+v, want priced", usageByModelBody.Models[0])
+	}
+	assertCost(t, usageByModelBody.Models[0].EstimatedCostUSD, 0.000058)
+}
+
+func TestUsageCostUsesEventTimePriceSnapshot(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "usage-price-snapshot@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
+	reasoningPrice := "3"
+	price, err := env.PriceStore.Create(context.Background(), modelprices.SaveParams{
+		Model:                  "gpt-price-snapshot",
+		InputUSDPerMillion:     "1",
+		CacheReadUSDPerMillion: stringPtr("0.5"),
+		OutputUSDPerMillion:    "2",
+		ReasoningUSDPerMillion: &reasoningPrice,
+	})
+	if err != nil {
+		t.Fatalf("create model price: %v", err)
+	}
+
+	usageID, err := testutil.NewID("use")
+	if err != nil {
+		t.Fatalf("NewID(use) error = %v", err)
+	}
+	requestedAt := requestedAtUTC()
+	if err := env.UsageStore.InsertEvent(context.Background(), appusage.InsertEventParams{
+		ID:                usageID,
+		UserID:            user.User.ID,
+		APIKeyID:          createdKey.ID,
+		Provider:          "openai",
+		Model:             "gpt-price-snapshot",
+		UpstreamAuthID:    "upstream-auth",
+		UpstreamAuthIndex: "upstream-index",
+		UpstreamAuthType:  "api-key",
+		Source:            "integration",
+		InputTokens:       10,
+		OutputTokens:      20,
+		ReasoningTokens:   3,
+		CacheReadTokens:   2,
+		CachedTokens:      2,
+		TotalTokens:       33,
+		LatencyMS:         123,
+		Failed:            false,
+		RequestedAt:       requestedAt,
+	}); err != nil {
+		t.Fatalf("InsertEvent() error = %v", err)
+	}
+
+	changedReasoningPrice := "300"
+	if _, err := env.PriceStore.Update(context.Background(), price.ID, modelprices.SaveParams{
+		Model:                  "gpt-price-snapshot",
+		InputUSDPerMillion:     "100",
+		CacheReadUSDPerMillion: stringPtr("50"),
+		OutputUSDPerMillion:    "200",
+		ReasoningUSDPerMillion: &changedReasoningPrice,
+	}); err != nil {
+		t.Fatalf("update model price: %v", err)
+	}
+
+	summary, err := env.UsageStore.GetSummary(
+		context.Background(),
+		user.User.ID,
+		requestedAt.AddDate(0, 0, -1),
+		requestedAt.AddDate(0, 0, 1),
+	)
+	if err != nil {
+		t.Fatalf("GetSummary() error = %v", err)
+	}
+	assertCost(t, summary.EstimatedCostUSD, 0.000058)
+	if summary.UnpricedTokens != 0 {
+		t.Fatalf("unpriced tokens = %d, want 0", summary.UnpricedTokens)
+	}
+}
+
+func TestUsageCostDoesNotDoubleCountReasoningIncludedOutput(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "usage-reasoning-included@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
+	reasoningPrice := "3"
+	if _, err := env.PriceStore.Create(context.Background(), modelprices.SaveParams{
+		Model:                  "gpt-reasoning-included",
+		InputUSDPerMillion:     "1",
+		CacheReadUSDPerMillion: stringPtr("0.5"),
+		OutputUSDPerMillion:    "2",
+		ReasoningUSDPerMillion: &reasoningPrice,
+	}); err != nil {
+		t.Fatalf("create model price: %v", err)
+	}
+
+	usageID, err := testutil.NewID("use")
+	if err != nil {
+		t.Fatalf("NewID(use) error = %v", err)
+	}
+	requestedAt := requestedAtUTC()
+	if err := env.UsageStore.InsertEvent(context.Background(), appusage.InsertEventParams{
+		ID:                usageID,
+		UserID:            user.User.ID,
+		APIKeyID:          createdKey.ID,
+		Provider:          "openai",
+		Model:             "gpt-reasoning-included",
+		UpstreamAuthID:    "upstream-auth",
+		UpstreamAuthIndex: "upstream-index",
+		UpstreamAuthType:  "api-key",
+		Source:            "integration",
+		InputTokens:       10,
+		OutputTokens:      20,
+		ReasoningTokens:   3,
+		CacheReadTokens:   2,
+		CachedTokens:      2,
+		TotalTokens:       30,
+		LatencyMS:         123,
+		Failed:            false,
+		RequestedAt:       requestedAt,
+	}); err != nil {
+		t.Fatalf("InsertEvent() error = %v", err)
+	}
+
+	from := requestedAt.AddDate(0, 0, -1)
+	to := requestedAt.AddDate(0, 0, 1)
+	summary, err := env.UsageStore.GetSummary(context.Background(), user.User.ID, from, to)
+	if err != nil {
+		t.Fatalf("GetSummary() error = %v", err)
+	}
+	assertCost(t, summary.EstimatedCostUSD, 0.000052)
+
+	byModel, err := env.UsageStore.GetByModel(context.Background(), user.User.ID, from, to)
+	if err != nil {
+		t.Fatalf("GetByModel() error = %v", err)
+	}
+	if len(byModel) != 1 || byModel[0].Model != "gpt-reasoning-included" {
+		t.Fatalf("usage by model = %+v, want gpt-reasoning-included", byModel)
+	}
+	assertCost(t, byModel[0].EstimatedCostUSD, 0.000052)
+}
+
+func TestUsageCostUsesSeparateCacheReadAndWritePrices(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "usage-cache-split@example.com", "password123")
+	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "usage key")
+	if _, err := env.PriceStore.Create(context.Background(), modelprices.SaveParams{
+		Model:                   "cache-split-test",
+		InputUSDPerMillion:      "1",
+		CacheReadUSDPerMillion:  stringPtr("0.1"),
+		CacheWriteUSDPerMillion: stringPtr("1.25"),
+		OutputUSDPerMillion:     "2",
+	}); err != nil {
+		t.Fatalf("create model price: %v", err)
+	}
+
+	usageID, err := testutil.NewID("use")
+	if err != nil {
+		t.Fatalf("NewID(use) error = %v", err)
+	}
+	requestedAt := requestedAtUTC()
+	if err := env.UsageStore.InsertEvent(context.Background(), appusage.InsertEventParams{
+		ID:                usageID,
+		UserID:            user.User.ID,
+		APIKeyID:          createdKey.ID,
+		Provider:          "claude",
+		Model:             "cache-split-test",
+		UpstreamAuthID:    "upstream-auth",
+		UpstreamAuthIndex: "upstream-index",
+		UpstreamAuthType:  "api-key",
+		Source:            "integration",
+		InputTokens:       120,
+		OutputTokens:      50,
+		CacheReadTokens:   40,
+		CacheWriteTokens:  10,
+		CachedTokens:      50,
+		TotalTokens:       170,
+		LatencyMS:         123,
+		Failed:            false,
+		RequestedAt:       requestedAt,
+	}); err != nil {
+		t.Fatalf("InsertEvent() error = %v", err)
+	}
+
+	from := requestedAt.AddDate(0, 0, -1)
+	to := requestedAt.AddDate(0, 0, 1)
+	summary, err := env.UsageStore.GetSummary(context.Background(), user.User.ID, from, to)
+	if err != nil {
+		t.Fatalf("GetSummary() error = %v", err)
+	}
+	assertCost(t, summary.EstimatedCostUSD, 0.0001865)
+
+	byModel, err := env.UsageStore.GetByModel(context.Background(), user.User.ID, from, to)
+	if err != nil {
+		t.Fatalf("GetByModel() error = %v", err)
+	}
+	if len(byModel) != 1 || byModel[0].Provider != "claude" || byModel[0].CacheReadTokens != 40 || byModel[0].CacheWriteTokens != 10 || byModel[0].CachedTokens != 50 {
+		t.Fatalf("usage by model = %+v, want claude usage with split cache tokens", byModel)
+	}
+	assertCost(t, byModel[0].EstimatedCostUSD, 0.0001865)
 }
 
 func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
@@ -89,6 +309,25 @@ func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
 	testutil.DecodeJSON(t, byKeyResp, &byKeyBody)
 	if len(byKeyBody.APIKeys) != 0 {
 		t.Fatalf("usage by key = %+v, want session key hidden", byKeyBody.APIKeys)
+	}
+}
+
+func stringPtr(value string) *string {
+	return &value
+}
+
+func requestedAtUTC() time.Time {
+	return time.Now().UTC()
+}
+
+func assertCost(t *testing.T, raw string, want float64) {
+	t.Helper()
+	got, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		t.Fatalf("parse cost %q: %v", raw, err)
+	}
+	if math.Abs(got-want) > 0.000000001 {
+		t.Fatalf("cost = %s (%f), want %f", raw, got, want)
 	}
 }
 

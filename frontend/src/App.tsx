@@ -4,6 +4,7 @@ import RequireAdmin from "@/components/require-admin"
 import RequireAuth from "@/components/require-auth"
 import AdminPage from "@/pages/admin"
 import AdminAPIKeyProviderPage from "@/pages/admin-api-key-provider"
+import AdminModelPricesPage from "@/pages/admin-model-prices"
 import AdminOAuthProvidersPage from "@/pages/admin-oauth-providers"
 import AdminOpenAICompatibilityProviderPage from "@/pages/admin-openai-compatibility-provider"
 import AdminUsersPage from "@/pages/admin-users"
@@ -36,6 +37,7 @@ function App() {
               path="openai-compatibility-provider"
               element={<AdminOpenAICompatibilityProviderPage />}
             />
+            <Route path="model-prices" element={<AdminModelPricesPage />} />
             <Route
               path="oauth-providers"
               element={<AdminOAuthProvidersPage />}

@@ -45,6 +45,13 @@ func (r *Recorder) HandleUsage(_ context.Context, record cliproxyusage.Record) {
 		return
 	}
 
+	// TODO(cliproxy): CLIProxyAPI v6.9.38 collapses cache_read_input_tokens and
+	// cache_creation_input_tokens into Detail.CachedTokens, and Claude can drop
+	// cache creation tokens when read tokens are also present. Once CLIProxyAPI
+	// exposes CacheReadTokens/CacheWriteTokens and normalizes InputTokens to the
+	// total prompt input, wire those fields here.
+	cacheReadTokens := record.Detail.CachedTokens
+	cacheWriteTokens := int64(0)
 	totalTokens := record.Detail.TotalTokens
 	if totalTokens == 0 {
 		totalTokens = record.Detail.InputTokens + record.Detail.OutputTokens + record.Detail.ReasoningTokens
@@ -63,6 +70,8 @@ func (r *Recorder) HandleUsage(_ context.Context, record cliproxyusage.Record) {
 		InputTokens:       record.Detail.InputTokens,
 		OutputTokens:      record.Detail.OutputTokens,
 		ReasoningTokens:   record.Detail.ReasoningTokens,
+		CacheReadTokens:   cacheReadTokens,
+		CacheWriteTokens:  cacheWriteTokens,
 		CachedTokens:      record.Detail.CachedTokens,
 		TotalTokens:       totalTokens,
 		LatencyMS:         record.Latency.Milliseconds(),

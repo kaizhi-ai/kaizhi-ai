@@ -20,6 +20,7 @@ import (
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/ids"
+	"kaizhi/backend/internal/modelprices"
 	"kaizhi/backend/internal/postgres"
 	appusage "kaizhi/backend/internal/usage"
 	"kaizhi/backend/internal/users"
@@ -30,6 +31,7 @@ type Env struct {
 	APIKeyStore *apikeys.Store
 	UsageStore  *appusage.Store
 	ChatStore   *chats.Store
+	PriceStore  *modelprices.Store
 	APIKeys     *apikeys.Service
 	Router      *gin.Engine
 	Cleanup     func()
@@ -99,6 +101,7 @@ func Setup(t *testing.T) *Env {
 	apiKeyStore := apikeys.NewStore(pool)
 	usageStore := appusage.NewStore(pool)
 	chatStore := chats.NewStore(pool)
+	priceStore := modelprices.NewStore(pool)
 	apiKeyService, err := apikeys.NewService(apiKeyStore, "integration-test-api-key-pepper")
 	if err != nil {
 		pool.Close()
@@ -113,6 +116,7 @@ func Setup(t *testing.T) *Env {
 	adminusers.NewHandlers(userStore, adminusers.NewStore(pool), apiKeyService).RegisterRoutes(router)
 	apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore).RegisterRoutes(router)
 	appusage.NewHandlers(usageStore, userStore, apiKeyService).RegisterRoutes(router)
+	modelprices.NewHandlers(priceStore, userStore, apiKeyService).RegisterRoutes(router)
 	chats.NewHandlers(
 		chatStore,
 		userStore,
@@ -130,6 +134,7 @@ func Setup(t *testing.T) *Env {
 		APIKeyStore: apiKeyStore,
 		UsageStore:  usageStore,
 		ChatStore:   chatStore,
+		PriceStore:  priceStore,
 		APIKeys:     apiKeyService,
 		Router:      router,
 		Cleanup:     cleanup,
@@ -210,6 +215,7 @@ func InsertUsageEvent(t *testing.T, store *appusage.Store, userID, apiKeyID stri
 		InputTokens:       10,
 		OutputTokens:      20,
 		ReasoningTokens:   3,
+		CacheReadTokens:   2,
 		CachedTokens:      2,
 		TotalTokens:       33,
 		LatencyMS:         123,
