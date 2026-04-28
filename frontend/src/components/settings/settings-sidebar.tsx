@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BarChart3,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -81,6 +82,16 @@ export function SettingsSidebar() {
                 >
                   <Settings />
                   <span>{t("nav.general")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={t("nav.usage")}
+                  isActive={location.pathname.startsWith("/settings/usage")}
+                  onClick={() => navigate("/settings/usage")}
+                >
+                  <BarChart3 />
+                  <span>{t("nav.usage")}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>

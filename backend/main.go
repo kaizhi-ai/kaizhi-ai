@@ -144,7 +144,7 @@ func main() {
 		log.Fatalf("configure api key service: %v", err)
 	}
 
-	access.RegisterProvider("kaizhi-api-key", apikeys.NewAccessProvider(apiKeyService))
+	access.RegisterProvider("kaizhi-api-key", apikeys.NewAccessProvider(apiKeyService, userStore))
 	authHandlers := auth.NewHandlers(userStore, apiKeyService)
 	adminUserHandlers := adminusers.NewHandlers(userStore, adminusers.NewStore(db), apiKeyService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)

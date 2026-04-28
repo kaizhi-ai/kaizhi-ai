@@ -5,14 +5,16 @@ import (
 	"net/http"
 
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/access"
+	"kaizhi/backend/internal/users"
 )
 
 type AccessProvider struct {
 	apiKeys *Service
+	users   *users.Store
 }
 
-func NewAccessProvider(apiKeys *Service) *AccessProvider {
-	return &AccessProvider{apiKeys: apiKeys}
+func NewAccessProvider(apiKeys *Service, userStore *users.Store) *AccessProvider {
+	return &AccessProvider{apiKeys: apiKeys, users: userStore}
 }
 
 func (p *AccessProvider) Identifier() string {
@@ -20,7 +22,7 @@ func (p *AccessProvider) Identifier() string {
 }
 
 func (p *AccessProvider) Authenticate(ctx context.Context, r *http.Request) (*access.Result, *access.AuthError) {
-	if p == nil || p.apiKeys == nil {
+	if p == nil || p.apiKeys == nil || p.users == nil {
 		return nil, access.NewInternalAuthError("API key provider is not configured", nil)
 	}
 
@@ -35,6 +37,18 @@ func (p *AccessProvider) Authenticate(ctx context.Context, r *http.Request) (*ac
 	apiKey, err := p.apiKeys.Authenticate(ctx, rawKey)
 	if err != nil {
 		return nil, access.NewInvalidCredentialError()
+	}
+
+	quota, err := p.users.GetQuotaState(ctx, apiKey.UserID)
+	if err != nil {
+		return nil, access.NewInternalAuthError("Failed to check user quota", err)
+	}
+	if quota.Exceeded() {
+		return nil, &access.AuthError{
+			Code:       access.AuthErrorCode("quota_exceeded"),
+			Message:    "Quota exceeded",
+			StatusCode: http.StatusTooManyRequests,
+		}
 	}
 
 	return &access.Result{

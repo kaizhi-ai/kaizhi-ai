@@ -2,6 +2,7 @@ package usage
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -22,52 +23,72 @@ func NewHandlers(store *Store, userStore *users.Store, apiKeys *apikeys.Service)
 }
 
 func (h *Handlers) RegisterRoutes(engine *gin.Engine) {
-	group := engine.Group("/api/v1/usage")
-	group.Use(apikeys.AuthMiddleware(h.apiKeys, h.users))
-	group.GET("", h.summary)
-	group.GET("/api-keys", h.byAPIKey)
-	group.GET("/models", h.byModel)
+	adminGroup := engine.Group("/api/v1/admin/usage")
+	adminGroup.Use(apikeys.AuthMiddleware(h.apiKeys, h.users), apikeys.RequireAdmin())
+	adminGroup.GET("", h.adminSummary)
+	adminGroup.GET("/api-keys", h.adminByAPIKey)
+	adminGroup.GET("/users", h.adminByUser)
+	adminGroup.GET("/models", h.adminByModel)
 }
 
-func (h *Handlers) summary(c *gin.Context) {
+func (h *Handlers) adminSummary(c *gin.Context) {
 	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	summary, err := h.store.GetSummary(c.Request.Context(), user.ID, from, to)
+	summary, err := h.store.GetSiteSummary(c.Request.Context(), from, to)
 	if err != nil {
+		log.Printf("admin usage summary: user=%s from=%s to=%s: %v", user.ID, dateOnly(from), dateOnly(to), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load usage"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"from": from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "usage": summary})
 }
 
-func (h *Handlers) byAPIKey(c *gin.Context) {
+func (h *Handlers) adminByAPIKey(c *gin.Context) {
 	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	items, err := h.store.GetByAPIKey(c.Request.Context(), user.ID, from, to)
+	items, err := h.store.GetSiteByAPIKey(c.Request.Context(), from, to)
 	if err != nil {
+		log.Printf("admin usage by api key: user=%s from=%s to=%s: %v", user.ID, dateOnly(from), dateOnly(to), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load usage"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"from": from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "api_keys": items})
 }
 
-func (h *Handlers) byModel(c *gin.Context) {
+func (h *Handlers) adminByUser(c *gin.Context) {
 	user := apikeys.CurrentUser(c)
 	from, to, err := usageRange(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	items, err := h.store.GetByModel(c.Request.Context(), user.ID, from, to)
+	items, err := h.store.GetSiteByUser(c.Request.Context(), from, to)
 	if err != nil {
+		log.Printf("admin usage by user: user=%s from=%s to=%s: %v", user.ID, dateOnly(from), dateOnly(to), err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load usage"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"from": from.Format("2006-01-02"), "to": to.Format("2006-01-02"), "users": items})
+}
+
+func (h *Handlers) adminByModel(c *gin.Context) {
+	user := apikeys.CurrentUser(c)
+	from, to, err := usageRange(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	items, err := h.store.GetSiteByModel(c.Request.Context(), from, to)
+	if err != nil {
+		log.Printf("admin usage by model: user=%s from=%s to=%s: %v", user.ID, dateOnly(from), dateOnly(to), err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load usage"})
 		return
 	}

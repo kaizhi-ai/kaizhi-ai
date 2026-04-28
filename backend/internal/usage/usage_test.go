@@ -11,6 +11,7 @@ import (
 	"kaizhi/backend/internal/modelprices"
 	"kaizhi/backend/internal/testutil"
 	appusage "kaizhi/backend/internal/usage"
+	"kaizhi/backend/internal/users"
 )
 
 func TestUsageEndpoints(t *testing.T) {
@@ -30,52 +31,94 @@ func TestUsageEndpoints(t *testing.T) {
 		t.Fatalf("create model price: %v", err)
 	}
 	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, createdKey.ID)
+	otherUser := testutil.SeedUser(t, env, "usage-other@example.com", "password123")
+	otherKey := testutil.CreateAPIKey(t, env.Router, otherUser.AccessToken, "other usage key")
+	testutil.InsertUsageEvent(t, env.UsageStore, otherUser.User.ID, otherKey.ID)
 	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")
 	to := requestedAt.AddDate(0, 0, 1).Format("2006-01-02")
 
-	usageResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage?from="+from+"&to="+to, user.AccessToken, nil)
-	if usageResp.Code != http.StatusOK {
-		t.Fatalf("usage status = %d, body = %s", usageResp.Code, usageResp.Body.String())
+	deletedUserUsageResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage?from="+from+"&to="+to, user.AccessToken, nil)
+	if deletedUserUsageResp.Code != http.StatusNotFound {
+		t.Fatalf("deleted user usage status = %d, want 404, body = %s", deletedUserUsageResp.Code, deletedUserUsageResp.Body.String())
 	}
-	var usageBody struct {
+
+	adminDeniedResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage?from="+from+"&to="+to, user.AccessToken, nil)
+	if adminDeniedResp.Code != http.StatusForbidden {
+		t.Fatalf("admin usage regular user status = %d, want 403, body = %s", adminDeniedResp.Code, adminDeniedResp.Body.String())
+	}
+
+	if err := env.UserStore.UpdateRole(context.Background(), user.User.ID, users.RoleAdmin); err != nil {
+		t.Fatalf("promote usage user to admin: %v", err)
+	}
+
+	adminSummaryResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage?from="+from+"&to="+to, user.AccessToken, nil)
+	if adminSummaryResp.Code != http.StatusOK {
+		t.Fatalf("admin usage status = %d, body = %s", adminSummaryResp.Code, adminSummaryResp.Body.String())
+	}
+	var adminSummaryBody struct {
 		Usage appusage.Summary `json:"usage"`
 	}
-	testutil.DecodeJSON(t, usageResp, &usageBody)
-	if usageBody.Usage.RequestCount != 1 || usageBody.Usage.TotalTokens != 33 || usageBody.Usage.UnpricedTokens != 0 {
-		t.Fatalf("usage summary = %+v, want 1 request, 33 tokens and priced usage", usageBody.Usage)
+	testutil.DecodeJSON(t, adminSummaryResp, &adminSummaryBody)
+	if adminSummaryBody.Usage.RequestCount != 2 || adminSummaryBody.Usage.TotalTokens != 66 {
+		t.Fatalf("admin usage summary = %+v, want site-wide 2 requests and 66 tokens", adminSummaryBody.Usage)
 	}
-	assertCost(t, usageBody.Usage.EstimatedCostUSD, 0.000058)
-	if usageBody.Usage.EstimatedCostUSD == "" {
-		t.Fatalf("usage summary estimated cost is empty")
+	if adminSummaryBody.Usage.CostUSD == "" {
+		t.Fatalf("admin usage summary cost is empty")
 	}
+	assertCost(t, adminSummaryBody.Usage.CostUSD, 0.000116)
 
-	usageByKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
-	if usageByKeyResp.Code != http.StatusOK {
-		t.Fatalf("usage by key status = %d, body = %s", usageByKeyResp.Code, usageByKeyResp.Body.String())
+	adminByKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
+	if adminByKeyResp.Code != http.StatusOK {
+		t.Fatalf("admin usage by key status = %d, body = %s", adminByKeyResp.Code, adminByKeyResp.Body.String())
 	}
-	var usageByKeyBody struct {
+	var adminByKeyBody struct {
 		APIKeys []appusage.APIKeyUsage `json:"api_keys"`
 	}
-	testutil.DecodeJSON(t, usageByKeyResp, &usageByKeyBody)
-	if len(usageByKeyBody.APIKeys) != 1 || usageByKeyBody.APIKeys[0].APIKeyID != createdKey.ID || usageByKeyBody.APIKeys[0].TotalTokens != 33 {
-		t.Fatalf("usage by key = %+v, want created key with 33 tokens", usageByKeyBody.APIKeys)
+	testutil.DecodeJSON(t, adminByKeyResp, &adminByKeyBody)
+	if len(adminByKeyBody.APIKeys) != 2 {
+		t.Fatalf("admin usage by key = %+v, want both user api keys", adminByKeyBody.APIKeys)
 	}
 
-	usageByModelResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage/models?from="+from+"&to="+to, user.AccessToken, nil)
+	usageByUserResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage/users?from="+from+"&to="+to, user.AccessToken, nil)
+	if usageByUserResp.Code != http.StatusOK {
+		t.Fatalf("admin usage by user status = %d, body = %s", usageByUserResp.Code, usageByUserResp.Body.String())
+	}
+	var usageByUserBody struct {
+		Users []appusage.UserUsage `json:"users"`
+	}
+	testutil.DecodeJSON(t, usageByUserResp, &usageByUserBody)
+	if len(usageByUserBody.Users) != 2 {
+		t.Fatalf("usage by user = %+v, want both users", usageByUserBody.Users)
+	}
+	var totalUserTokens int64
+	seenUsers := map[string]bool{}
+	for _, item := range usageByUserBody.Users {
+		totalUserTokens += item.TotalTokens
+		seenUsers[item.UserID] = true
+		if item.UserEmail == "" || item.RequestCount != 1 || item.TotalTokens != 33 {
+			t.Fatalf("usage by user item = %+v, want owner fields and one 33-token request", item)
+		}
+		assertCost(t, item.CostUSD, 0.000058)
+	}
+	if totalUserTokens != 66 || !seenUsers[user.User.ID] || !seenUsers[otherUser.User.ID] {
+		t.Fatalf("usage by user = %+v, want site-wide users with 66 tokens", usageByUserBody.Users)
+	}
+
+	usageByModelResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage/models?from="+from+"&to="+to, user.AccessToken, nil)
 	if usageByModelResp.Code != http.StatusOK {
-		t.Fatalf("usage by model status = %d, body = %s", usageByModelResp.Code, usageByModelResp.Body.String())
+		t.Fatalf("admin usage by model status = %d, body = %s", usageByModelResp.Code, usageByModelResp.Body.String())
 	}
 	var usageByModelBody struct {
 		Models []appusage.ModelUsage `json:"models"`
 	}
 	testutil.DecodeJSON(t, usageByModelResp, &usageByModelBody)
-	if len(usageByModelBody.Models) != 1 || usageByModelBody.Models[0].Model != "gpt-test" || usageByModelBody.Models[0].TotalTokens != 33 {
-		t.Fatalf("usage by model = %+v, want gpt-test with 33 tokens", usageByModelBody.Models)
+	if len(usageByModelBody.Models) != 1 || usageByModelBody.Models[0].Model != "gpt-test" || usageByModelBody.Models[0].TotalTokens != 66 {
+		t.Fatalf("usage by model = %+v, want site-wide gpt-test with 66 tokens", usageByModelBody.Models)
 	}
 	if usageByModelBody.Models[0].PriceMissing || usageByModelBody.Models[0].UnpricedTokens != 0 {
 		t.Fatalf("usage by model price flags = %+v, want priced", usageByModelBody.Models[0])
 	}
-	assertCost(t, usageByModelBody.Models[0].EstimatedCostUSD, 0.000058)
+	assertCost(t, usageByModelBody.Models[0].CostUSD, 0.000116)
 }
 
 func TestUsageDateRangeUsesUTCDayBounds(t *testing.T) {
@@ -180,7 +223,7 @@ func TestUsageCostUsesEventTimePriceSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSummary() error = %v", err)
 	}
-	assertCost(t, summary.EstimatedCostUSD, 0.000058)
+	assertCost(t, summary.CostUSD, 0.000058)
 	if summary.UnpricedTokens != 0 {
 		t.Fatalf("unpriced tokens = %d, want 0", summary.UnpricedTokens)
 	}
@@ -266,7 +309,7 @@ func TestUsageCostDoesNotDoubleCountReasoningIncludedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSummary() error = %v", err)
 	}
-	assertCost(t, summary.EstimatedCostUSD, 0.000052)
+	assertCost(t, summary.CostUSD, 0.000052)
 
 	byModel, err := env.UsageStore.GetByModel(context.Background(), user.User.ID, from, to)
 	if err != nil {
@@ -275,7 +318,7 @@ func TestUsageCostDoesNotDoubleCountReasoningIncludedOutput(t *testing.T) {
 	if len(byModel) != 1 || byModel[0].Model != "gpt-reasoning-included" {
 		t.Fatalf("usage by model = %+v, want gpt-reasoning-included", byModel)
 	}
-	assertCost(t, byModel[0].EstimatedCostUSD, 0.000052)
+	assertCost(t, byModel[0].CostUSD, 0.000052)
 }
 
 func TestUsageCostUsesSeparateCacheReadAndWritePrices(t *testing.T) {
@@ -328,7 +371,7 @@ func TestUsageCostUsesSeparateCacheReadAndWritePrices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSummary() error = %v", err)
 	}
-	assertCost(t, summary.EstimatedCostUSD, 0.0001865)
+	assertCost(t, summary.CostUSD, 0.0001865)
 
 	byModel, err := env.UsageStore.GetByModel(context.Background(), user.User.ID, from, to)
 	if err != nil {
@@ -337,7 +380,7 @@ func TestUsageCostUsesSeparateCacheReadAndWritePrices(t *testing.T) {
 	if len(byModel) != 1 || byModel[0].Provider != "claude" || byModel[0].CacheReadTokens != 40 || byModel[0].CacheWriteTokens != 10 || byModel[0].CachedTokens != 50 {
 		t.Fatalf("usage by model = %+v, want claude usage with split cache tokens", byModel)
 	}
-	assertCost(t, byModel[0].EstimatedCostUSD, 0.0001865)
+	assertCost(t, byModel[0].CostUSD, 0.0001865)
 }
 
 func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
@@ -346,13 +389,17 @@ func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
 
 	// SeedUser issues a session key under the hood. Recording usage against it
 	// proves the session row is excluded from the per-api-key breakdown — chat
-	// traffic is summed in /api/v1/usage but never appears as its own row.
+	// traffic is summed in the admin usage total but never appears as its own row.
 	user := testutil.SeedUser(t, env, "session-usage@example.com", "password123")
 	requestedAt := testutil.InsertUsageEvent(t, env.UsageStore, user.User.ID, user.SessionKeyID)
 	from := requestedAt.AddDate(0, 0, -1).Format("2006-01-02")
 	to := requestedAt.AddDate(0, 0, 1).Format("2006-01-02")
 
-	usageResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage?from="+from+"&to="+to, user.AccessToken, nil)
+	if err := env.UserStore.UpdateRole(context.Background(), user.User.ID, users.RoleAdmin); err != nil {
+		t.Fatalf("promote session usage user to admin: %v", err)
+	}
+
+	usageResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage?from="+from+"&to="+to, user.AccessToken, nil)
 	if usageResp.Code != http.StatusOK {
 		t.Fatalf("usage status = %d, body = %s", usageResp.Code, usageResp.Body.String())
 	}
@@ -364,7 +411,7 @@ func TestUsageHidesSessionKeysFromBreakdown(t *testing.T) {
 		t.Fatalf("usage summary = %+v, want 1 request and 33 tokens", usageBody.Usage)
 	}
 
-	byKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
+	byKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage/api-keys?from="+from+"&to="+to, user.AccessToken, nil)
 	if byKeyResp.Code != http.StatusOK {
 		t.Fatalf("usage by key status = %d, body = %s", byKeyResp.Code, byKeyResp.Body.String())
 	}
@@ -421,19 +468,24 @@ func assertCost(t *testing.T, raw string, want float64) {
 	}
 }
 
-func TestUsageRequiresSessionToken(t *testing.T) {
+func TestAdminUsageRequiresSessionToken(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
 
-	resp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage", "", nil)
+	deletedResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage", "", nil)
+	if deletedResp.Code != http.StatusNotFound {
+		t.Fatalf("deleted usage status = %d, want 404, body = %s", deletedResp.Code, deletedResp.Body.String())
+	}
+
+	resp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage", "", nil)
 	if resp.Code != http.StatusUnauthorized {
-		t.Fatalf("usage without token status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("admin usage without token status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 
 	user := testutil.SeedUser(t, env, "usage-user-key@example.com", "password123")
 	createdKey := testutil.CreateAPIKey(t, env.Router, user.AccessToken, "model traffic only")
-	userKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/usage", createdKey.Key, nil)
+	userKeyResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/usage", createdKey.Key, nil)
 	if userKeyResp.Code != http.StatusUnauthorized {
-		t.Fatalf("usage with user api key status = %d, want 401", userKeyResp.Code)
+		t.Fatalf("admin usage with user api key status = %d, want 401", userKeyResp.Code)
 	}
 }

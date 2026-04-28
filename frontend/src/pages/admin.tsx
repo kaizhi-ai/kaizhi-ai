@@ -13,7 +13,7 @@ export default function AdminPage() {
   const location = useLocation()
 
   if (location.pathname === "/admin") {
-    return <Navigate to="/admin/users" replace />
+    return <Navigate to="/admin/usage" replace />
   }
 
   return (

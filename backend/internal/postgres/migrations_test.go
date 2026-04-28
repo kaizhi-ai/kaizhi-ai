@@ -17,8 +17,8 @@ func TestLoadMigrations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMigrations() error = %v", err)
 	}
-	if len(migrations) != 4 {
-		t.Fatalf("len(migrations) = %d, want 4", len(migrations))
+	if len(migrations) != 5 {
+		t.Fatalf("len(migrations) = %d, want 5", len(migrations))
 	}
 
 	migration := migrations[0]
@@ -76,6 +76,22 @@ func TestLoadMigrations(t *testing.T) {
 		!strings.Contains(usageWindowMigration.SQL, "DROP TABLE IF EXISTS usage_daily") {
 		t.Fatalf("usage window migration SQL does not include user counters and usage_daily drop")
 	}
+
+	quotaMigration := migrations[4]
+	if quotaMigration.Version != "0005" {
+		t.Fatalf("quota migration version = %q, want 0005", quotaMigration.Version)
+	}
+	if quotaMigration.Name != "user_quotas" {
+		t.Fatalf("quota migration name = %q, want user_quotas", quotaMigration.Name)
+	}
+	if !strings.Contains(quotaMigration.SQL, "quota_5h_cost_usd") ||
+		!strings.Contains(quotaMigration.SQL, "quota_7d_cost_usd") {
+		t.Fatalf("quota migration SQL does not include user quota columns")
+	}
+	if !strings.Contains(quotaMigration.SQL, "cost_usd") ||
+		!strings.Contains(quotaMigration.SQL, "estimated_cost_usd") {
+		t.Fatalf("quota migration SQL does not include usage cost column rename")
+	}
 }
 
 func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
@@ -130,6 +146,8 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		"usage_7d_cost_usd",
 		"usage_5h_started_at",
 		"usage_7d_started_at",
+		"quota_5h_cost_usd",
+		"quota_7d_cost_usd",
 	} {
 		var exists bool
 		if err := pool.QueryRow(ctx, `
@@ -177,7 +195,7 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		{table: "usage_events", column: "cache_write_usd_per_million_snapshot"},
 		{table: "usage_events", column: "output_usd_per_million_snapshot"},
 		{table: "usage_events", column: "reasoning_usd_per_million_snapshot"},
-		{table: "usage_events", column: "estimated_cost_usd"},
+		{table: "usage_events", column: "cost_usd"},
 		{table: "usage_events", column: "price_missing"},
 	} {
 		var exists bool
@@ -195,6 +213,22 @@ func TestEnsureSchemaRecordsInitialMigration(t *testing.T) {
 		if !exists {
 			t.Fatalf("%s.%s column was not created", check.table, check.column)
 		}
+	}
+
+	var oldCostColumnExists bool
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = current_schema()
+			  AND table_name = 'usage_events'
+			  AND column_name = 'estimated_cost_usd'
+		)
+	`).Scan(&oldCostColumnExists); err != nil {
+		t.Fatalf("query usage_events.estimated_cost_usd column: %v", err)
+	}
+	if oldCostColumnExists {
+		t.Fatalf("usage_events.estimated_cost_usd should be renamed to cost_usd")
 	}
 }
 

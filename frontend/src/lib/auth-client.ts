@@ -9,6 +9,14 @@ export type AuthUser = {
   language: string
   status: string
   role: string
+  quota_5h_cost_usd?: string | null
+  quota_7d_cost_usd?: string | null
+  usage_5h_cost_usd?: string
+  usage_7d_cost_usd?: string
+  usage_5h_started_at?: string
+  usage_7d_started_at?: string
+  usage_5h_reset_at?: string | null
+  usage_7d_reset_at?: string | null
   created_at: string
   updated_at?: string
 }

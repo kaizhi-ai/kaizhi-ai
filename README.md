@@ -7,10 +7,10 @@ A multi-purpose AI platform for teams: web chat, account management, API key dis
 ## Features
 
 - **Web Chat**: session list, message history, file attachments, Markdown/code rendering.
-- **Account Management**: admin bootstrap, user creation, suspension, password reset.
+- **Account Management**: admin bootstrap, user creation, suspension, password reset, and per-user model cost quotas.
 - **API Keys**: users self-manage keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), with 30/90/365-day or never-expire options.
 - **Provider Management**: admins configure OAuth, API key, and OpenAI-compatible providers; maintain model lists and routing.
-- **Usage Stats**: view usage by time range, API key, or model.
+- **Usage and Quotas**: users can view current 5-hour and 7-day cost windows and quotas; admins can review site-wide usage by time range, user, API key, or model.
 - **Xray Proxy**: built-in xray-core, supports `vless://`, `socks5://`, `http(s)://` upstream proxies.
 
 ## Environment Variables

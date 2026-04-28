@@ -12,10 +12,14 @@ export type AdminUser = {
   language: string
   status: AdminUserStatus | string
   role: AdminUserRole | string
+  quota_5h_cost_usd: string | null
+  quota_7d_cost_usd: string | null
   usage_5h_cost_usd: string
   usage_7d_cost_usd: string
   usage_5h_started_at: string
   usage_7d_started_at: string
+  usage_5h_reset_at: string | null
+  usage_7d_reset_at: string | null
   created_at: string
   updated_at: string
 }
@@ -75,16 +79,25 @@ export async function createAdminUser(input: {
   language?: AdminUserLanguage | string | null
   password: string
   role: AdminUserRole
+  quota_5h_cost_usd?: string | null
+  quota_7d_cost_usd?: string | null
 }): Promise<AdminUser> {
+  const payload: Record<string, string | null> = {
+    email: input.email.trim(),
+    name: input.name?.trim() ?? "",
+    language: input.language ?? null,
+    password: input.password,
+    role: input.role,
+  }
+  if (input.quota_5h_cost_usd !== undefined) {
+    payload.quota_5h_cost_usd = input.quota_5h_cost_usd
+  }
+  if (input.quota_7d_cost_usd !== undefined) {
+    payload.quota_7d_cost_usd = input.quota_7d_cost_usd
+  }
   const data = await request<{ user: AdminUser }>(ADMIN_USERS_PATH, {
     method: "POST",
-    body: JSON.stringify({
-      email: input.email.trim(),
-      name: input.name?.trim() ?? "",
-      language: input.language ?? null,
-      password: input.password,
-      role: input.role,
-    }),
+    body: JSON.stringify(payload),
   })
   return data.user
 }
@@ -96,13 +109,21 @@ export async function updateAdminUser(
     name?: string
     language?: AdminUserLanguage | string
     role?: AdminUserRole
+    quota_5h_cost_usd?: string | null
+    quota_7d_cost_usd?: string | null
   }
 ): Promise<AdminUser> {
-  const payload: Record<string, string> = {}
+  const payload: Record<string, string | null> = {}
   if (input.email !== undefined) payload.email = input.email.trim()
   if (input.name !== undefined) payload.name = input.name.trim()
   if (input.language !== undefined) payload.language = input.language
   if (input.role !== undefined) payload.role = input.role
+  if (input.quota_5h_cost_usd !== undefined) {
+    payload.quota_5h_cost_usd = input.quota_5h_cost_usd
+  }
+  if (input.quota_7d_cost_usd !== undefined) {
+    payload.quota_7d_cost_usd = input.quota_7d_cost_usd
+  }
   const data = await request<{ user: AdminUser }>(userPath(id), {
     method: "PATCH",
     body: JSON.stringify(payload),

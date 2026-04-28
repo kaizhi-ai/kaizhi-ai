@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Kaizhi is a multi-purpose AI platform for teams. A single service combines web chat, account management, user-issued API keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), provider management (OAuth / API key / OpenAI-compatible), usage tracking, and an embedded xray-core proxy. The Go backend embeds CLIProxyAPI as the unified model entrypoint and serves the built React SPA from a single binary.
+Kaizhi is a multi-purpose AI platform for teams. A single service combines web chat, account management, user-issued API keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), provider management (OAuth / API key / OpenAI-compatible), usage tracking, per-user model cost quotas, and an embedded xray-core proxy. The Go backend embeds CLIProxyAPI as the unified model entrypoint and serves the built React SPA from a single binary.
 
 ## Tech Stack
 
@@ -64,9 +64,9 @@ Never commit `.env`, `backend/data/`, generated data-dir contents, or compiled b
 
 API key boundaries (don't break these):
 
-- `kind='session'` keys (minted at login, 7-day sliding expiry) are accepted by both account/chat/usage APIs and the CLIProxy model entrypoint.
-- `kind='user'` keys (created in the API keys UI, for external clients) are accepted **only** by the CLIProxy access provider — never by account/chat/usage APIs.
-- `/api/v1/usage/api-keys` lists only `user` keys; web chat (session) traffic is rolled into `/api/v1/usage` totals without its own row.
+- `kind='session'` keys (minted at login, 7-day sliding expiry) are accepted by account/chat/admin APIs according to route permissions and by the CLIProxy model entrypoint.
+- `kind='user'` keys (created in the API keys UI, for external clients) are accepted **only** by the CLIProxy access provider — never by account/chat/settings/admin APIs.
+- `/api/v1/admin/usage/api-keys` lists only `user` keys; web chat (session) traffic is rolled into site-wide totals and model/user breakdowns without its own API-key row.
 
 ## References
 

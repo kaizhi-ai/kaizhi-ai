@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  BarChart3,
   ChevronsUpDown,
   DollarSign,
   Globe,
@@ -76,6 +77,16 @@ export function AdminSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={t("nav.usage")}
+                  isActive={location.pathname.startsWith("/admin/usage")}
+                  onClick={() => navigate("/admin/usage")}
+                >
+                  <BarChart3 />
+                  <span>{t("nav.usage")}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip={t("nav.userManagement")}

@@ -30,12 +30,14 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 		t.Fatalf("promote admin: %v", err)
 	}
 
-	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/admin/users", admin.AccessToken, map[string]string{
-		"email":    "New.User@Example.com",
-		"name":     "  New User  ",
-		"language": "en-US",
-		"password": "initial123",
-		"role":     "user",
+	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/admin/users", admin.AccessToken, map[string]any{
+		"email":             "New.User@Example.com",
+		"name":              "  New User  ",
+		"language":          "en-US",
+		"password":          "initial123",
+		"role":              "user",
+		"quota_5h_cost_usd": "1.50",
+		"quota_7d_cost_usd": 20,
 	})
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("create user status = %d, want 201, body = %s", createResp.Code, createResp.Body.String())
@@ -46,6 +48,12 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 	testutil.DecodeJSON(t, createResp, &created)
 	if created.User.Email != "new.user@example.com" || created.User.Name != "New User" || created.User.Language != users.LanguageEnglish || created.User.Role != users.RoleUser || created.User.Status != users.StatusActive {
 		t.Fatalf("created user = %+v, want normalized active user", created.User)
+	}
+	if created.User.Quota5HCostUSD == nil || *created.User.Quota5HCostUSD != "1.500000000000" {
+		t.Fatalf("created 5h quota = %v, want 1.500000000000", created.User.Quota5HCostUSD)
+	}
+	if created.User.Quota7DCostUSD == nil || *created.User.Quota7DCostUSD != "20.000000000000" {
+		t.Fatalf("created 7d quota = %v, want 20.000000000000", created.User.Quota7DCostUSD)
 	}
 
 	listResp := testutil.DoJSON(t, env.Router, http.MethodGet, "/api/v1/admin/users", admin.AccessToken, nil)
@@ -60,11 +68,13 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 		t.Fatalf("listed users len = %d, want 2", len(listed.Users))
 	}
 
-	updateResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/admin/users/"+created.User.ID, admin.AccessToken, map[string]string{
-		"email":    "renamed@example.com",
-		"name":     "Renamed User",
-		"language": "zh-CN",
-		"role":     "admin",
+	updateResp := testutil.DoJSON(t, env.Router, http.MethodPatch, "/api/v1/admin/users/"+created.User.ID, admin.AccessToken, map[string]any{
+		"email":             "renamed@example.com",
+		"name":              "Renamed User",
+		"language":          "zh-CN",
+		"role":              "admin",
+		"quota_5h_cost_usd": nil,
+		"quota_7d_cost_usd": "25.75",
 	})
 	if updateResp.Code != http.StatusOK {
 		t.Fatalf("update user status = %d, want 200, body = %s", updateResp.Code, updateResp.Body.String())
@@ -75,6 +85,12 @@ func TestAdminUsersCreateUpdateBanUnbanAndResetPassword(t *testing.T) {
 	testutil.DecodeJSON(t, updateResp, &updated)
 	if updated.User.Email != "renamed@example.com" || updated.User.Name != "Renamed User" || updated.User.Language != users.LanguageChinese || updated.User.Role != users.RoleAdmin {
 		t.Fatalf("updated user = %+v, want renamed admin", updated.User)
+	}
+	if updated.User.Quota5HCostUSD != nil {
+		t.Fatalf("updated 5h quota = %v, want nil", updated.User.Quota5HCostUSD)
+	}
+	if updated.User.Quota7DCostUSD == nil || *updated.User.Quota7DCostUSD != "25.750000000000" {
+		t.Fatalf("updated 7d quota = %v, want 25.750000000000", updated.User.Quota7DCostUSD)
 	}
 
 	oldPasswordSession := testutil.LoginUser(t, env.Router, "renamed@example.com", "initial123")

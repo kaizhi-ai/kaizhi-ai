@@ -27,6 +27,14 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -42,15 +50,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
 import {
   Table,
   TableBody,
@@ -85,6 +84,22 @@ function formatUSD(value: string | undefined, fmt: Intl.NumberFormat) {
   const amount = Number(value)
   if (!Number.isFinite(amount)) return "-"
   return fmt.format(amount)
+}
+
+function formatQuota(
+  value: string | null | undefined,
+  fmt: Intl.NumberFormat,
+  unlimitedLabel: string
+) {
+  if (value === null || value === undefined || value === "") {
+    return unlimitedLabel
+  }
+  return formatUSD(value, fmt)
+}
+
+function quotaPayload(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed === "" ? null : trimmed
 }
 
 function displayName(user: AdminUser) {
@@ -157,6 +172,8 @@ export default function AdminUsersPage() {
   const [language, setLanguage] = useState<AdminUserLanguage | null>(null)
   const [password, setPassword] = useState("")
   const [role, setRole] = useState<AdminUserRole>("user")
+  const [quota5H, setQuota5H] = useState("")
+  const [quota7D, setQuota7D] = useState("")
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -165,6 +182,8 @@ export default function AdminUsersPage() {
   const [editName, setEditName] = useState("")
   const [editLanguage, setEditLanguage] = useState<AdminUserLanguage>("zh-CN")
   const [editRole, setEditRole] = useState<AdminUserRole>("user")
+  const [editQuota5H, setEditQuota5H] = useState("")
+  const [editQuota7D, setEditQuota7D] = useState("")
   const [editError, setEditError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
@@ -214,6 +233,8 @@ export default function AdminUsersPage() {
     setLanguage(null)
     setPassword("")
     setRole("user")
+    setQuota5H("")
+    setQuota7D("")
     setCreateError(null)
   }
 
@@ -228,6 +249,8 @@ export default function AdminUsersPage() {
         language,
         password,
         role,
+        quota_5h_cost_usd: quotaPayload(quota5H),
+        quota_7d_cost_usd: quotaPayload(quota7D),
       })
       setUsers((prev) => upsertUser(prev, created))
       resetCreateForm()
@@ -245,6 +268,8 @@ export default function AdminUsersPage() {
     setEditName(target.name ?? "")
     setEditLanguage(languageValue(target.language))
     setEditRole(roleValue(target))
+    setEditQuota5H(target.quota_5h_cost_usd ?? "")
+    setEditQuota7D(target.quota_7d_cost_usd ?? "")
     setEditError(null)
   }
 
@@ -259,6 +284,8 @@ export default function AdminUsersPage() {
         name?: string
         language?: AdminUserLanguage
         role?: AdminUserRole
+        quota_5h_cost_usd?: string | null
+        quota_7d_cost_usd?: string | null
       } = {}
       const nextEmail = editEmail.trim()
       const nextName = editName.trim()
@@ -268,6 +295,14 @@ export default function AdminUsersPage() {
         payload.language = editLanguage
       }
       if (editRole !== roleValue(editTarget)) payload.role = editRole
+      const nextQuota5H = quotaPayload(editQuota5H)
+      const nextQuota7D = quotaPayload(editQuota7D)
+      if (nextQuota5H !== (editTarget.quota_5h_cost_usd ?? null)) {
+        payload.quota_5h_cost_usd = nextQuota5H
+      }
+      if (nextQuota7D !== (editTarget.quota_7d_cost_usd ?? null)) {
+        payload.quota_7d_cost_usd = nextQuota7D
+      }
 
       if (Object.keys(payload).length === 0) {
         setEditTarget(null)
@@ -368,34 +403,30 @@ export default function AdminUsersPage() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <Sheet
+          <Button
+            className="w-full sm:w-auto"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus />
+            {t("adminUsers.newUser")}
+          </Button>
+          <Dialog
             open={createOpen}
             onOpenChange={(next) => {
               setCreateOpen(next)
               if (!next) resetCreateForm()
             }}
           >
-            <SheetTrigger
-              render={
-                <Button className="w-full sm:w-auto">
-                  <Plus />
-                  {t("adminUsers.newUser")}
-                </Button>
-              }
-            />
-            <SheetContent>
-              <form
-                onSubmit={handleCreate}
-                className="flex h-full flex-col gap-4"
-              >
-                <SheetHeader>
-                  <SheetTitle>{t("adminUsers.newUser")}</SheetTitle>
-                  <SheetDescription>
+            <DialogContent className="sm:max-w-2xl">
+              <form onSubmit={handleCreate} className="flex flex-col gap-5">
+                <DialogHeader>
+                  <DialogTitle>{t("adminUsers.newUser")}</DialogTitle>
+                  <DialogDescription>
                     {t("adminUsers.createDescription")}
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="flex flex-1 flex-col gap-4 px-4">
-                  <div className="flex flex-col gap-1.5">
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <Label htmlFor="admin-user-email">
                       {t("adminUsers.email")}
                     </Label>
@@ -409,7 +440,7 @@ export default function AdminUsersPage() {
                       className="h-9"
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <Label htmlFor="admin-user-name">
                       {t("settings.name")}
                     </Label>
@@ -422,7 +453,7 @@ export default function AdminUsersPage() {
                       className="h-9"
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <Label htmlFor="admin-user-password">
                       {t("common.password")}
                     </Label>
@@ -503,20 +534,60 @@ export default function AdminUsersPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="admin-user-quota-5h">
+                      {t("adminUsers.quota5h")}
+                    </Label>
+                    <Input
+                      id="admin-user-quota-5h"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder={t("adminUsers.unlimitedQuota")}
+                      value={quota5H}
+                      onChange={(e) => setQuota5H(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="admin-user-quota-7d">
+                      {t("adminUsers.quota7d")}
+                    </Label>
+                    <Input
+                      id="admin-user-quota-7d"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder={t("adminUsers.unlimitedQuota")}
+                      value={quota7D}
+                      onChange={(e) => setQuota7D(e.target.value)}
+                      className="h-9"
+                    />
+                  </div>
                   {createError && (
-                    <p className="text-sm text-destructive">{createError}</p>
+                    <p className="text-sm text-destructive sm:col-span-2">
+                      {createError}
+                    </p>
                   )}
                 </div>
-                <SheetFooter>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={creating}
+                    onClick={() => setCreateOpen(false)}
+                  >
+                    {t("common.cancel")}
+                  </Button>
                   <Button type="submit" disabled={creating}>
                     {creating
                       ? t("common.creating")
                       : t("adminUsers.createUser")}
                   </Button>
-                </SheetFooter>
+                </DialogFooter>
               </form>
-            </SheetContent>
-          </Sheet>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 
@@ -535,24 +606,16 @@ export default function AdminUsersPage() {
         <Table className="min-w-5xl table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-32">
-                {t("adminUsers.user")}
-              </TableHead>
-              <TableHead className="w-72">
-                {t("adminUsers.email")}
-              </TableHead>
-              <TableHead className="w-20">
-                {t("adminUsers.role")}
-              </TableHead>
-              <TableHead className="w-32 text-right">
+              <TableHead className="w-32">{t("adminUsers.user")}</TableHead>
+              <TableHead className="w-72">{t("adminUsers.email")}</TableHead>
+              <TableHead className="w-20">{t("adminUsers.role")}</TableHead>
+              <TableHead className="w-40 text-right">
                 {t("adminUsers.usage5hQuota")}
               </TableHead>
-              <TableHead className="w-32 text-right">
+              <TableHead className="w-40 text-right">
                 {t("adminUsers.usage7dQuota")}
               </TableHead>
-              <TableHead className="w-40">
-                {t("common.createdAt")}
-              </TableHead>
+              <TableHead className="w-40">{t("common.createdAt")}</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -576,19 +639,41 @@ export default function AdminUsersPage() {
                     <TableCell className="truncate font-medium">
                       {displayName(item)}
                     </TableCell>
-                    <TableCell className="truncate">
-                      {item.email}
-                    </TableCell>
+                    <TableCell className="truncate">{item.email}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {roleValue(item) === "admin"
                         ? t("adminUsers.roleAdmin")
                         : t("adminUsers.roleUser")}
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground tabular-nums">
-                      {formatUSD(item.usage_5h_cost_usd, usdFmt)}
+                    <TableCell className="text-right tabular-nums">
+                      <div className="flex flex-col items-end leading-tight">
+                        <span className="text-muted-foreground">
+                          {formatUSD(item.usage_5h_cost_usd, usdFmt)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          /{" "}
+                          {formatQuota(
+                            item.quota_5h_cost_usd,
+                            usdFmt,
+                            t("adminUsers.unlimitedQuota")
+                          )}
+                        </span>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-right text-muted-foreground tabular-nums">
-                      {formatUSD(item.usage_7d_cost_usd, usdFmt)}
+                    <TableCell className="text-right tabular-nums">
+                      <div className="flex flex-col items-end leading-tight">
+                        <span className="text-muted-foreground">
+                          {formatUSD(item.usage_7d_cost_usd, usdFmt)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          /{" "}
+                          {formatQuota(
+                            item.quota_7d_cost_usd,
+                            usdFmt,
+                            t("adminUsers.unlimitedQuota")
+                          )}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDate(item.created_at, dateFmt)}
@@ -657,22 +742,22 @@ export default function AdminUsersPage() {
         </Table>
       </div>
 
-      <Sheet
+      <Dialog
         open={editTarget !== null}
         onOpenChange={(next) => {
           if (!next && !editing) setEditTarget(null)
         }}
       >
-        <SheetContent>
-          <form onSubmit={handleEdit} className="flex h-full flex-col gap-4">
-            <SheetHeader>
-              <SheetTitle>{t("adminUsers.editUser")}</SheetTitle>
-              <SheetDescription>
+        <DialogContent className="sm:max-w-2xl">
+          <form onSubmit={handleEdit} className="flex flex-col gap-5">
+            <DialogHeader>
+              <DialogTitle>{t("adminUsers.editUser")}</DialogTitle>
+              <DialogDescription>
                 {t("adminUsers.editDescription")}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="flex flex-1 flex-col gap-4 px-4">
-              <div className="flex flex-col gap-1.5">
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="edit-admin-user-email">
                   {t("adminUsers.email")}
                 </Label>
@@ -686,7 +771,7 @@ export default function AdminUsersPage() {
                   className="h-9"
                 />
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 sm:col-span-2">
                 <Label htmlFor="edit-admin-user-name">
                   {t("settings.name")}
                 </Label>
@@ -755,20 +840,60 @@ export default function AdminUsersPage() {
                   </p>
                 )}
               </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-admin-user-quota-5h">
+                  {t("adminUsers.quota5h")}
+                </Label>
+                <Input
+                  id="edit-admin-user-quota-5h"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={t("adminUsers.unlimitedQuota")}
+                  value={editQuota5H}
+                  onChange={(e) => setEditQuota5H(e.target.value)}
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-admin-user-quota-7d">
+                  {t("adminUsers.quota7d")}
+                </Label>
+                <Input
+                  id="edit-admin-user-quota-7d"
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder={t("adminUsers.unlimitedQuota")}
+                  value={editQuota7D}
+                  onChange={(e) => setEditQuota7D(e.target.value)}
+                  className="h-9"
+                />
+              </div>
               {editError && (
-                <p className="text-sm text-destructive">{editError}</p>
+                <p className="text-sm text-destructive sm:col-span-2">
+                  {editError}
+                </p>
               )}
             </div>
-            <SheetFooter>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={editing}
+                onClick={() => setEditTarget(null)}
+              >
+                {t("common.cancel")}
+              </Button>
               <Button type="submit" disabled={editing}>
                 {editing ? t("common.saving") : t("common.save")}
               </Button>
-            </SheetFooter>
+            </DialogFooter>
           </form>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      <Sheet
+      <Dialog
         open={pwdTarget !== null}
         onOpenChange={(next) => {
           if (!next && !pwdSubmitting) {
@@ -778,16 +903,16 @@ export default function AdminUsersPage() {
           }
         }}
       >
-        <SheetContent>
+        <DialogContent className="sm:max-w-xl">
           {pwdDone ? (
-            <div className="flex h-full flex-col gap-4">
-              <SheetHeader>
-                <SheetTitle>{t("adminUsers.passwordReset")}</SheetTitle>
-                <SheetDescription>
+            <div className="flex flex-col gap-5">
+              <DialogHeader>
+                <DialogTitle>{t("adminUsers.passwordReset")}</DialogTitle>
+                <DialogDescription>
                   {t("adminUsers.closePasswordDescription")}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="flex flex-1 flex-col gap-3 px-4">
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-3">
                 <div className="rounded-md bg-muted p-3 font-mono text-sm break-all select-all">
                   {pwdValue}
                 </div>
@@ -800,7 +925,7 @@ export default function AdminUsersPage() {
                   {pwdCopied ? t("common.copied") : t("common.copy")}
                 </Button>
               </div>
-              <SheetFooter>
+              <DialogFooter>
                 <Button
                   type="button"
                   onClick={() => {
@@ -811,20 +936,20 @@ export default function AdminUsersPage() {
                 >
                   {t("common.complete")}
                 </Button>
-              </SheetFooter>
+              </DialogFooter>
             </div>
           ) : (
             <form
               onSubmit={handleResetPassword}
-              className="flex h-full flex-col gap-4"
+              className="flex flex-col gap-5"
             >
-              <SheetHeader>
-                <SheetTitle>{t("adminUsers.resetPassword")}</SheetTitle>
-                <SheetDescription>
+              <DialogHeader>
+                <DialogTitle>{t("adminUsers.resetPassword")}</DialogTitle>
+                <DialogDescription>
                   {pwdTarget ? accountLabel(pwdTarget) : null}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="flex flex-1 flex-col gap-4 px-4">
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="reset-admin-user-password">
                     {t("adminUsers.newPassword")}
@@ -858,17 +983,25 @@ export default function AdminUsersPage() {
                   <p className="text-sm text-destructive">{pwdError}</p>
                 )}
               </div>
-              <SheetFooter>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pwdSubmitting}
+                  onClick={() => setPwdTarget(null)}
+                >
+                  {t("common.cancel")}
+                </Button>
                 <Button type="submit" disabled={pwdSubmitting}>
                   {pwdSubmitting
                     ? t("adminUsers.resetting")
                     : t("adminUsers.resetPassword")}
                 </Button>
-              </SheetFooter>
+              </DialogFooter>
             </form>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={banTarget !== null}

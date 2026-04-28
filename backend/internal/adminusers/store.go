@@ -68,26 +68,12 @@ func (s *Store) BanUserAndRevokeSessions(ctx context.Context, userID string) (*u
 
 func updateUserStatus(ctx context.Context, tx pgx.Tx, userID, status string) (*users.User, error) {
 	var user users.User
-	err := tx.QueryRow(ctx, `
+	err := users.ScanUser(tx.QueryRow(ctx, `
 		UPDATE users
 		SET status = $2, updated_at = now()
 		WHERE id = $1
 		RETURNING `+users.NormalizedUserColumnsSQL+`
-	`, userID, status).Scan(
-		&user.ID,
-		&user.Email,
-		&user.Name,
-		&user.Language,
-		&user.PasswordHash,
-		&user.Status,
-		&user.Role,
-		&user.Usage5HCostUSD,
-		&user.Usage7DCostUSD,
-		&user.Usage5HStartedAt,
-		&user.Usage7DStartedAt,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
+	`, userID, status), &user)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, users.ErrNotFound
 	}
