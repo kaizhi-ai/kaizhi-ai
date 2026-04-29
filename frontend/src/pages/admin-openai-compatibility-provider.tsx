@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Eye, EyeOff, MoreHorizontal, Plus, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { modelAliasFromName } from "@/lib/model-alias"
 import {
@@ -18,7 +19,6 @@ import {
   proxySummaryKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -150,7 +150,6 @@ export default function AdminOpenAICompatibilityProviderPage() {
   const { t } = useTranslation()
   const [providers, setProviders] = useState<OpenAICompatibilityProvider[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
@@ -169,7 +168,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(
+          toast.error(
             err instanceof Error
               ? err.message
               : t("errors.loadOpenAICompatibilityProvidersFailed")
@@ -192,24 +191,24 @@ export default function AdminOpenAICompatibilityProviderPage() {
   async function handleSaved() {
     setAddOpen(false)
     setEditTarget(null)
-    setError(null)
     try {
       await refreshProviders()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("common.refreshFailed"))
+      toast.error(
+        err instanceof Error ? err.message : t("common.refreshFailed")
+      )
     }
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    setError(null)
     try {
       await deleteOpenAICompatibilityProvider(deleteTarget.name)
       await refreshProviders()
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -235,12 +234,6 @@ export default function AdminOpenAICompatibilityProviderPage() {
           {t("common.addProvider")}
         </Button>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="overflow-hidden rounded-lg border">
         <Table className="min-w-[840px]">
@@ -417,7 +410,6 @@ function OpenAICompatibilityProviderForm({
   const [models, setModels] = useState<OpenAICompatibilityProviderModel[]>(
     normalizeRows(initial?.models)
   )
-  const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fetching, setFetching] = useState(false)
 
@@ -473,10 +465,9 @@ function OpenAICompatibilityProviderForm({
   async function handleFetchModels() {
     const entry = fetchKeyEntry
     if (!entry) {
-      setError(t("errors.apiKeyRequired"))
+      toast.error(t("errors.apiKeyRequired"))
       return
     }
-    setError(null)
     setFetching(true)
     try {
       const ids = await fetchOpenAICompatibilityProviderModels({
@@ -487,7 +478,7 @@ function OpenAICompatibilityProviderForm({
       })
       setModels(ids.map((id) => ({ name: id, alias: modelAliasFromName(id) })))
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.fetchModelsFailed")
       )
     } finally {
@@ -497,23 +488,22 @@ function OpenAICompatibilityProviderForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    setError(null)
 
     if (!name.trim()) {
-      setError(t("errors.nameRequired"))
+      toast.error(t("errors.nameRequired"))
       return
     }
     if (!baseUrl.trim()) {
-      setError(t("errors.baseURLRequired"))
+      toast.error(t("errors.baseURLRequired"))
       return
     }
     const entries = normalizedAPIKeyEntries()
     if (entries.length === 0) {
-      setError(t("errors.apiKeyRequired"))
+      toast.error(t("errors.apiKeyRequired"))
       return
     }
     if (!models.some((model) => model.name.trim() && model.alias.trim())) {
-      setError(t("provider.modelsRequired"))
+      toast.error(t("provider.modelsRequired"))
       return
     }
 
@@ -532,7 +522,7 @@ function OpenAICompatibilityProviderForm({
       }
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -677,11 +667,6 @@ function OpenAICompatibilityProviderForm({
           }
         />
       </Field>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

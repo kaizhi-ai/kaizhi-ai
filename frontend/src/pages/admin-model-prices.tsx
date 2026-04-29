@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
 
 import {
   createModelPrice,
@@ -25,7 +26,6 @@ import {
   type ModelPrice,
   type ModelPriceInput,
 } from "@/lib/admin-model-prices-client"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -124,15 +124,12 @@ export default function AdminModelPricesPage() {
 
   const [prices, setPrices] = useState<ModelPrice[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
 
   const [formOpen, setFormOpen] = useState(() => seedModel !== "")
   const [formTarget, setFormTarget] = useState<ModelPrice | null>(null)
   const [form, setForm] = useState<FormState>(() =>
     emptyForm({ model: seedModel })
   )
-  const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [importingDefaults, setImportingDefaults] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ModelPrice | null>(null)
@@ -146,7 +143,7 @@ export default function AdminModelPricesPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(errorMessage(err, t("errors.loadModelPricesFailed")))
+          toast.error(errorMessage(err, t("errors.loadModelPricesFailed")))
         }
       })
       .finally(() => {
@@ -164,14 +161,12 @@ export default function AdminModelPricesPage() {
   const openCreate = useCallback((seed?: Partial<FormState>) => {
     setFormTarget(null)
     setForm(emptyForm(seed))
-    setFormError(null)
     setFormOpen(true)
   }, [])
 
   const openEdit = useCallback((price: ModelPrice) => {
     setFormTarget(price)
     setForm(formFromPrice(price))
-    setFormError(null)
     setFormOpen(true)
   }, [])
 
@@ -189,8 +184,6 @@ export default function AdminModelPricesPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    setFormError(null)
-    setNotice(null)
     setSubmitting(true)
     try {
       const saved = formTarget
@@ -199,7 +192,7 @@ export default function AdminModelPricesPage() {
       setPrices((prev) => upsertPrice(prev, saved))
       setFormOpen(false)
     } catch (err) {
-      setFormError(errorMessage(err, t("errors.saveFailed")))
+      toast.error(errorMessage(err, t("errors.saveFailed")))
     } finally {
       setSubmitting(false)
     }
@@ -208,14 +201,12 @@ export default function AdminModelPricesPage() {
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    setError(null)
-    setNotice(null)
     try {
       await deleteModelPrice(deleteTarget.id)
       setPrices((prev) => prev.filter((price) => price.id !== deleteTarget.id))
       setDeleteTarget(null)
     } catch (err) {
-      setError(errorMessage(err, t("errors.deleteFailed")))
+      toast.error(errorMessage(err, t("errors.deleteFailed")))
     } finally {
       setDeleting(false)
     }
@@ -223,13 +214,11 @@ export default function AdminModelPricesPage() {
 
   async function handleImportDefaults() {
     setImportingDefaults(true)
-    setError(null)
-    setNotice(null)
     try {
       const result = await importDefaultModelPrices()
       const items = await listModelPrices()
       setPrices(items)
-      setNotice(
+      toast.success(
         t("modelPrices.importDefaultPricesResult", {
           created: result.created,
           skipped: result.skipped,
@@ -237,7 +226,7 @@ export default function AdminModelPricesPage() {
         })
       )
     } catch (err) {
-      setError(errorMessage(err, t("errors.importDefaultPricesFailed")))
+      toast.error(errorMessage(err, t("errors.importDefaultPricesFailed")))
     } finally {
       setImportingDefaults(false)
     }
@@ -428,18 +417,6 @@ export default function AdminModelPricesPage() {
         </div>
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {notice && (
-        <Alert>
-          <AlertDescription>{notice}</AlertDescription>
-        </Alert>
-      )}
-
       <div className="flex flex-col gap-4">
         <DataTable
           columns={priceColumns}
@@ -471,12 +448,6 @@ export default function AdminModelPricesPage() {
                 {t("modelPrices.formDescription")}
               </DialogDescription>
             </DialogHeader>
-
-            {formError && (
-              <Alert variant="destructive">
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>

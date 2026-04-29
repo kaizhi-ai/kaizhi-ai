@@ -8,6 +8,7 @@ import {
 import type { ColumnDef, FilterFn } from "@tanstack/react-table"
 import { MoreHorizontal, Plus, Sparkles } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import {
   banAdminUser,
@@ -22,7 +23,6 @@ import {
 } from "@/lib/admin-users-client"
 import { useAuth } from "@/lib/auth-context"
 import { languageOptions, supportedLanguage } from "@/lib/i18n"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -171,7 +171,6 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [filter, setFilter] = useState<UserFilter>("active")
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   const [createOpen, setCreateOpen] = useState(false)
   const [email, setEmail] = useState("")
@@ -181,7 +180,6 @@ export default function AdminUsersPage() {
   const [role, setRole] = useState<AdminUserRole>("user")
   const [quota5H, setQuota5H] = useState("")
   const [quota7D, setQuota7D] = useState("")
-  const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
   const [editTarget, setEditTarget] = useState<AdminUser | null>(null)
@@ -191,21 +189,17 @@ export default function AdminUsersPage() {
   const [editRole, setEditRole] = useState<AdminUserRole>("user")
   const [editQuota5H, setEditQuota5H] = useState("")
   const [editQuota7D, setEditQuota7D] = useState("")
-  const [editError, setEditError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
   const [pwdTarget, setPwdTarget] = useState<AdminUser | null>(null)
   const [pwdValue, setPwdValue] = useState("")
-  const [pwdError, setPwdError] = useState<string | null>(null)
   const [pwdSubmitting, setPwdSubmitting] = useState(false)
   const [pwdDone, setPwdDone] = useState(false)
   const [pwdCopied, setPwdCopied] = useState(false)
 
   const [banTarget, setBanTarget] = useState<AdminUser | null>(null)
-  const [banError, setBanError] = useState<string | null>(null)
   const [banSubmitting, setBanSubmitting] = useState(false)
   const [unbanningId, setUnbanningId] = useState<string | null>(null)
-  const [unbanError, setUnbanError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -214,7 +208,9 @@ export default function AdminUsersPage() {
         if (!cancelled) setUsers(items)
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(errorMessage(err, t("errors.loadUsersFailed")))
+        if (!cancelled) {
+          toast.error(errorMessage(err, t("errors.loadUsersFailed")))
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -276,12 +272,10 @@ export default function AdminUsersPage() {
     setRole("user")
     setQuota5H("")
     setQuota7D("")
-    setCreateError(null)
   }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault()
-    setCreateError(null)
     setCreating(true)
     try {
       const created = await createAdminUser({
@@ -297,7 +291,7 @@ export default function AdminUsersPage() {
       resetCreateForm()
       setCreateOpen(false)
     } catch (err) {
-      setCreateError(errorMessage(err, t("adminUsers.createFailed")))
+      toast.error(errorMessage(err, t("adminUsers.createFailed")))
     } finally {
       setCreating(false)
     }
@@ -311,13 +305,11 @@ export default function AdminUsersPage() {
     setEditRole(roleValue(target))
     setEditQuota5H(target.quota_5h_cost_usd ?? "")
     setEditQuota7D(target.quota_7d_cost_usd ?? "")
-    setEditError(null)
   }, [])
 
   async function handleEdit(e: FormEvent) {
     e.preventDefault()
     if (!editTarget) return
-    setEditError(null)
     setEditing(true)
     try {
       const payload: {
@@ -354,7 +346,7 @@ export default function AdminUsersPage() {
       setEditTarget(null)
       if (updated.id === currentUserId) void refresh()
     } catch (err) {
-      setEditError(errorMessage(err, t("errors.saveFailed")))
+      toast.error(errorMessage(err, t("errors.saveFailed")))
     } finally {
       setEditing(false)
     }
@@ -363,7 +355,6 @@ export default function AdminUsersPage() {
   const openResetPassword = useCallback((target: AdminUser) => {
     setPwdTarget(target)
     setPwdValue(generatePassword())
-    setPwdError(null)
     setPwdDone(false)
     setPwdCopied(false)
   }, [])
@@ -371,13 +362,12 @@ export default function AdminUsersPage() {
   async function handleResetPassword(e: FormEvent) {
     e.preventDefault()
     if (!pwdTarget) return
-    setPwdError(null)
     setPwdSubmitting(true)
     try {
       await resetAdminUserPassword(pwdTarget.id, pwdValue)
       setPwdDone(true)
     } catch (err) {
-      setPwdError(errorMessage(err, t("adminUsers.resetFailed")))
+      toast.error(errorMessage(err, t("adminUsers.resetFailed")))
     } finally {
       setPwdSubmitting(false)
     }
@@ -390,19 +380,19 @@ export default function AdminUsersPage() {
       setTimeout(() => setPwdCopied(false), 1500)
     } catch {
       setPwdCopied(false)
+      toast.error(t("common.copyFailed"))
     }
   }
 
   async function confirmBan() {
     if (!banTarget) return
-    setBanError(null)
     setBanSubmitting(true)
     try {
       const updated = await banAdminUser(banTarget.id)
       setUsers((prev) => upsertUser(prev, updated))
       setBanTarget(null)
     } catch (err) {
-      setBanError(errorMessage(err, t("adminUsers.banFailed")))
+      toast.error(errorMessage(err, t("adminUsers.banFailed")))
     } finally {
       setBanSubmitting(false)
     }
@@ -410,13 +400,12 @@ export default function AdminUsersPage() {
 
   const handleUnban = useCallback(
     async (target: AdminUser) => {
-      setUnbanError(null)
       setUnbanningId(target.id)
       try {
         const updated = await unbanAdminUser(target.id)
         setUsers((prev) => upsertUser(prev, updated))
       } catch (err) {
-        setUnbanError(errorMessage(err, t("adminUsers.unbanFailed")))
+        toast.error(errorMessage(err, t("adminUsers.unbanFailed")))
       } finally {
         setUnbanningId(null)
       }
@@ -425,7 +414,6 @@ export default function AdminUsersPage() {
   )
 
   const requestBan = useCallback((target: AdminUser) => {
-    setBanError(null)
     setBanTarget(target)
   }, [])
 
@@ -820,11 +808,6 @@ export default function AdminUsersPage() {
                       onChange={(e) => setQuota7D(e.target.value)}
                     />
                   </Field>
-                  {createError && (
-                    <Alert variant="destructive" className="sm:col-span-2">
-                      <AlertDescription>{createError}</AlertDescription>
-                    </Alert>
-                  )}
                 </div>
                 <DialogFooter>
                   <Button
@@ -846,17 +829,6 @@ export default function AdminUsersPage() {
           </Dialog>
         </div>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {unbanError && (
-        <Alert variant="destructive">
-          <AlertDescription>{unbanError}</AlertDescription>
-        </Alert>
-      )}
 
       <DataTable
         columns={columns}
@@ -1000,11 +972,6 @@ export default function AdminUsersPage() {
                   onChange={(e) => setEditQuota7D(e.target.value)}
                 />
               </Field>
-              {editError && (
-                <Alert variant="destructive" className="sm:col-span-2">
-                  <AlertDescription>{editError}</AlertDescription>
-                </Alert>
-              )}
             </div>
             <DialogFooter>
               <Button
@@ -1112,11 +1079,6 @@ export default function AdminUsersPage() {
                     {t("adminUsers.minPassword")}
                   </FieldDescription>
                 </Field>
-                {pwdError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{pwdError}</AlertDescription>
-                  </Alert>
-                )}
               </div>
               <DialogFooter>
                 <Button
@@ -1143,7 +1105,6 @@ export default function AdminUsersPage() {
         onOpenChange={(next) => {
           if (!next && !banSubmitting) {
             setBanTarget(null)
-            setBanError(null)
           }
         }}
       >
@@ -1160,11 +1121,6 @@ export default function AdminUsersPage() {
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {banError && (
-            <Alert variant="destructive">
-              <AlertDescription>{banError}</AlertDescription>
-            </Alert>
-          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={banSubmitting}>
               {t("common.cancel")}

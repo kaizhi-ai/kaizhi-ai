@@ -11,6 +11,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import {
   deleteOAuthProvider,
@@ -27,7 +28,6 @@ import {
   proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -159,7 +159,6 @@ export default function AdminOAuthProvidersPage() {
   const [filesByProvider, setFilesByProvider] =
     useState<FilesByProvider>(emptyFiles)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addProvider, setAddProvider] = useState<OAuthProviderId>("codex")
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
@@ -185,7 +184,7 @@ export default function AdminOAuthProvidersPage() {
         })
         .catch((err: unknown) => {
           if (!cancelled) {
-            setError(
+            toast.error(
               err instanceof Error
                 ? err.message
                 : t("errors.loadOAuthProvidersFailed")
@@ -212,7 +211,6 @@ export default function AdminOAuthProvidersPage() {
   async function toggleDisabled(row: Row) {
     const key = rowKey(row)
     setStatusUpdatingKey(key)
-    setError(null)
     try {
       const updated = await updateOAuthProviderDisabled(
         row.provider,
@@ -226,7 +224,7 @@ export default function AdminOAuthProvidersPage() {
         ),
       }))
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.saveStatusFailed")
       )
     } finally {
@@ -237,7 +235,6 @@ export default function AdminOAuthProvidersPage() {
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    setError(null)
     try {
       await deleteOAuthProvider(deleteTarget.provider, deleteTarget.file.name)
       setFilesByProvider((prev) => ({
@@ -248,7 +245,7 @@ export default function AdminOAuthProvidersPage() {
       }))
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -272,12 +269,6 @@ export default function AdminOAuthProvidersPage() {
           {t("common.addProvider")}
         </Button>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="overflow-hidden rounded-lg border">
         <Table className="min-w-[840px]">
@@ -508,14 +499,12 @@ function OAuthFlow({
   const [projectId, setProjectId] = useState("")
   const [proxyEnabled, setProxyEnabled] = useState(true)
   const [redirectUrl, setRedirectUrl] = useState("")
-  const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState(false)
   const proxyUrl = proxyURLFromEnabled(proxyEnabled)
 
   async function start() {
-    setError(null)
     setStarting(true)
     try {
       const result = await startOAuthProvider(provider, { projectId, proxyUrl })
@@ -524,7 +513,7 @@ function OAuthFlow({
       setRedirectUrl("")
       setCopied(false)
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.startOAuthFailed")
       )
     } finally {
@@ -539,14 +528,13 @@ function OAuthFlow({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setError(t("common.copyFailed"))
+      toast.error(t("common.copyFailed"))
     }
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!authState || submitting) return
-    setError(null)
     setSubmitting(true)
     try {
       await finishOAuthProvider(provider, {
@@ -556,7 +544,7 @@ function OAuthFlow({
       const nextFiles = await listOAuthProviders(provider)
       onSuccess(nextFiles)
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.oauthLoginFailed")
       )
     } finally {
@@ -585,11 +573,6 @@ function OAuthFlow({
           checked={proxyEnabled}
           onCheckedChange={setProxyEnabled}
         />
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
         <div className="flex justify-end">
           <Button
             type="button"
@@ -650,11 +633,6 @@ function OAuthFlow({
           className="font-mono text-xs"
         />
       </Field>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting || !redirectUrl.trim()}>
           {submitting ? t("common.submittingLogin") : t("common.submit")}
@@ -676,12 +654,10 @@ function ProxyURLForm({
     proxyEnabledFromURL(target.file.proxy_url)
   )
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setSubmitting(true)
-    setError(null)
     try {
       await updateOAuthProviderProxyURL(
         target.provider,
@@ -690,7 +666,7 @@ function ProxyURLForm({
       )
       await onSaved()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -703,11 +679,6 @@ function ProxyURLForm({
         checked={proxyEnabled}
         onCheckedChange={setProxyEnabled}
       />
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

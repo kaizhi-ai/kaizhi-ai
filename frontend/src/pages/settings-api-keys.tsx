@@ -8,6 +8,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import {
   createAPIKey,
@@ -17,7 +18,6 @@ import {
   type APIKey,
   type APIKeyExpiry,
 } from "@/lib/api-keys-client"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -149,7 +149,6 @@ export default function SettingsAPIKeysPage() {
   const [keys, setKeys] = useState<APIKey[]>([])
   const [filter, setFilter] = useState<KeyFilter>("active")
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<APIKey | null>(null)
   const [revokeTarget, setRevokeTarget] = useState<APIKey | null>(null)
@@ -163,7 +162,7 @@ export default function SettingsAPIKeysPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(
+          toast.error(
             err instanceof Error ? err.message : t("errors.loadAPIKeysFailed")
           )
         }
@@ -184,7 +183,6 @@ export default function SettingsAPIKeysPage() {
   async function confirmRevoke() {
     if (!revokeTarget) return
     setRevoking(true)
-    setError(null)
     try {
       await revokeAPIKey(revokeTarget.id)
       setKeys((prev) =>
@@ -200,7 +198,7 @@ export default function SettingsAPIKeysPage() {
       )
       setRevokeTarget(null)
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.revokeAPIKeyFailed")
       )
     } finally {
@@ -213,12 +211,6 @@ export default function SettingsAPIKeysPage() {
       <div className="flex flex-col gap-3">
         <h1 className="text-xl font-semibold">{t("apiKeys.title")}</h1>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs
@@ -1008,7 +1000,6 @@ function CreateKeyDialog({
   const [name, setName] = useState("")
   const [expiresIn, setExpiresIn] = useState<APIKeyExpiry>("90d")
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -1016,7 +1007,6 @@ function CreateKeyDialog({
     setName("")
     setExpiresIn("90d")
     setSubmitting(false)
-    setError(null)
     setCreatedKey(null)
     setCopied(false)
   }
@@ -1031,14 +1021,13 @@ function CreateKeyDialog({
     const trimmed = name.trim()
     if (!trimmed) return
     setSubmitting(true)
-    setError(null)
     try {
       const created = await createAPIKey(trimmed, expiresIn)
       const { key: rawKey, ...safeKey } = created
       setCreatedKey(rawKey)
       onCreated(safeKey)
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.createAPIKeyFailed")
       )
     } finally {
@@ -1053,7 +1042,7 @@ function CreateKeyDialog({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      setError(t("common.copyFailed"))
+      toast.error(t("common.copyFailed"))
     }
   }
 
@@ -1095,11 +1084,6 @@ function CreateKeyDialog({
                 {copied ? t("common.copied") : t("common.copy")}
               </Button>
             </div>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
             <div className="flex justify-end">
               <Button type="button" onClick={() => handleOpenChange(false)}>
                 {t("common.complete")}
@@ -1142,11 +1126,6 @@ function CreateKeyDialog({
                 </SelectContent>
               </Select>
             </Field>
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
             <div className="flex justify-end">
               <Button type="submit" disabled={submitting || !name.trim()}>
                 {submitting ? t("common.creating") : t("common.create")}

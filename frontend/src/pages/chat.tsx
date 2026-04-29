@@ -1,18 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
+import { toast } from "sonner"
 
-import { useAuth } from "@/lib/auth-context"
-import {
-  chatMessagesToUIMessages,
-  createChat,
-  deleteChat,
-  draftTitleFromText,
-  listChatMessages,
-  listChats,
-  type ChatMessage,
-  type ChatSession,
-} from "@/lib/chats-client"
+import { deleteChat, listChats, type ChatSession } from "@/lib/chats-client"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,29 +15,45 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/chat/app-sidebar"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import { SidebarUserFooter } from "@/components/sidebar-user-footer"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatPanel } from "@/components/chat/chat-panel"
 
+function displayTitle(chat: ChatSession, fallback: string) {
+  return chat.title.trim() || fallback
+}
+
 export default function ChatPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const params = useParams()
   const activeChatId = params.id
-  const navigate = useNavigate()
-  const { user, signOut } = useAuth()
-
   const [chats, setChats] = useState<ChatSession[]>([])
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [messagesChatId, setMessagesChatId] = useState<string | undefined>(
-    undefined
-  )
   const [loadingChats, setLoadingChats] = useState(true)
-  const [loadingMessages, setLoadingMessages] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ChatSession | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const skipLoadRef = useRef<string | undefined>(undefined)
+  const refreshedChatIdRef = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     let cancelled = false
@@ -55,7 +63,7 @@ export default function ChatPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(
+          toast.error(
             err instanceof Error ? err.message : t("errors.loadChatsFailed")
           )
         }
@@ -69,95 +77,32 @@ export default function ChatPage() {
   }, [t])
 
   useEffect(() => {
+    if (
+      !activeChatId ||
+      loadingChats ||
+      chats.some((chat) => chat.id === activeChatId)
+    ) {
+      return
+    }
+    if (refreshedChatIdRef.current === activeChatId) return
+
     let cancelled = false
-    // queueMicrotask defers the loading-state set past the effect commit, so
-    // the lint rule against synchronous setState-in-effect stays satisfied.
-    queueMicrotask(() => {
-      if (cancelled) return
-      if (!activeChatId) {
-        setMessages([])
-        setMessagesChatId(undefined)
-        return
-      }
-      if (skipLoadRef.current === activeChatId) {
-        skipLoadRef.current = undefined
-        return
-      }
-      setLoadingMessages(true)
-      setError(null)
-      listChatMessages(activeChatId)
-        .then((next) => {
-          if (!cancelled) {
-            setMessages(next)
-            setMessagesChatId(activeChatId)
-          }
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setMessages([])
-            setMessagesChatId(undefined)
-            setError(
-              err instanceof Error
-                ? err.message
-                : t("errors.loadMessagesFailed")
-            )
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingMessages(false)
-        })
-    })
+    refreshedChatIdRef.current = activeChatId
+    listChats()
+      .then((next) => {
+        if (!cancelled) setChats(next)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          toast.error(
+            err instanceof Error ? err.message : t("errors.loadChatsFailed")
+          )
+        }
+      })
     return () => {
       cancelled = true
     }
-  }, [activeChatId, t])
-
-  const activeChat = useMemo(
-    () => chats.find((chat) => chat.id === activeChatId),
-    [activeChatId, chats]
-  )
-
-  const headerTitle = activeChatId
-    ? activeChat?.title.trim() || t("chat.title")
-    : t("chat.newChat")
-
-  const uiMessages = useMemo(() => {
-    if (!activeChatId || messagesChatId !== activeChatId) return []
-    return chatMessagesToUIMessages(messages)
-  }, [activeChatId, messages, messagesChatId])
-
-  async function handleCreateChat(text: string) {
-    setError(null)
-    const created = await createChat(draftTitleFromText(text))
-    setChats((prev) => [created, ...prev])
-    setMessages([])
-    setMessagesChatId(created.id)
-    skipLoadRef.current = created.id
-    navigate(`/chat/${created.id}`, { replace: true })
-    return created.id
-  }
-
-  const handlePersistedMessage = useCallback(
-    (message: ChatMessage) => {
-      setMessages((prev) => {
-        if (prev.some((item) => item.id === message.id)) return prev
-        if (activeChatId && message.session_id !== activeChatId) return prev
-        return [...prev, message]
-      })
-    },
-    [activeChatId]
-  )
-
-  function handleNewChat() {
-    setError(null)
-    setMessages([])
-    setMessagesChatId(undefined)
-    navigate("/chat")
-  }
-
-  function handleSelectChat(id: string) {
-    navigate(`/chat/${id}`)
-  }
+  }, [activeChatId, chats, loadingChats, t])
 
   async function confirmDelete() {
     if (!pendingDelete) return
@@ -166,13 +111,11 @@ export default function ChatPage() {
       await deleteChat(pendingDelete.id)
       setChats((prev) => prev.filter((chat) => chat.id !== pendingDelete.id))
       if (pendingDelete.id === activeChatId) {
-        setMessages([])
-        setMessagesChatId(undefined)
         navigate("/chat", { replace: true })
       }
       setPendingDelete(null)
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.deleteChatFailed")
       )
     } finally {
@@ -180,38 +123,84 @@ export default function ChatPage() {
     }
   }
 
-  function handleSignOut() {
-    signOut()
-    navigate("/login", { replace: true })
-  }
+  const activeChat = chats.find((chat) => chat.id === activeChatId)
+  const headerTitle = activeChatId
+    ? activeChat?.title.trim() || t("chat.title")
+    : t("chat.newChat")
 
   return (
     <SidebarProvider className="h-dvh overflow-hidden bg-background text-foreground">
-      <AppSidebar
-        chats={chats}
-        activeChatId={activeChatId}
-        userName={user?.name}
-        userEmail={user?.email}
-        onNewChat={handleNewChat}
-        onSelectChat={handleSelectChat}
-        onDeleteChat={setPendingDelete}
-        onSettings={() => navigate("/settings/general")}
-        onAdmin={() => navigate("/admin")}
-        onSignOut={handleSignOut}
-        isAdmin={user?.role === "admin"}
-      />
+      <Sidebar collapsible="icon">
+        <SidebarHeader>
+          <div className="flex items-center justify-between gap-2 overflow-hidden px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+            <span className="truncate text-sm font-semibold whitespace-nowrap group-data-[collapsible=icon]:hidden">
+              Kaizhi Chat
+            </span>
+            <SidebarTrigger className="shrink-0" />
+          </div>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip={t("chat.newChat")}
+                onClick={() => navigate("/chat")}
+              >
+                <Plus />
+                <span>{t("chat.newChat")}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel>{t("chat.recent")}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {chats.map((chat) => {
+                  const isActive = chat.id === activeChatId
+                  return (
+                    <SidebarMenuItem key={chat.id}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        onClick={() => navigate(`/chat/${chat.id}`)}
+                      >
+                        <span className="truncate">
+                          {displayTitle(chat, t("chat.newChat"))}
+                        </span>
+                      </SidebarMenuButton>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <SidebarMenuAction
+                              showOnHover
+                              aria-label={t("common.moreActions")}
+                            />
+                          }
+                        >
+                          <MoreHorizontal />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent side="right" align="start">
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => setPendingDelete(chat)}
+                          >
+                            <Trash2 />
+                            {t("common.delete")}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </SidebarMenuItem>
+                  )
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </SidebarContent>
+        <SidebarUserFooter />
+      </Sidebar>
+
       <SidebarInset className="flex h-dvh min-w-0 flex-col">
-        <ChatHeader title={loadingChats ? t("common.loading") : headerTitle} />
-        <ChatPanel
-          chatId={activeChatId}
-          initialMessages={uiMessages}
-          initialMessagesChatId={messagesChatId}
-          loading={!!activeChatId && loadingMessages}
-          error={error}
-          onCreateChat={handleCreateChat}
-          onPersistedMessage={handlePersistedMessage}
-          onError={setError}
-        />
+        <ChatHeader title={headerTitle} />
+        <ChatPanel chatId={activeChatId} />
       </SidebarInset>
 
       <AlertDialog

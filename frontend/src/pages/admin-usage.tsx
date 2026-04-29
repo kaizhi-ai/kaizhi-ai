@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Plus, RefreshCw } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 
 import {
   listUnmatchedModels,
@@ -16,7 +17,6 @@ import {
   type UserUsage,
 } from "@/lib/usage-client"
 import { cn } from "@/lib/utils"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -215,8 +215,11 @@ export default function AdminUsagePage() {
       setUsers(result.users)
       setUnmatched(result.unmatched)
       setErrors(result.errors)
+      if (result.errors.summary) toast.error(result.errors.summary)
     } catch (err) {
-      setErrors({ summary: errorMessage(err, t("errors.loadUsageFailed")) })
+      const message = errorMessage(err, t("errors.loadUsageFailed"))
+      setErrors({ summary: message })
+      toast.error(message)
     } finally {
       setLoading(false)
     }
@@ -237,10 +240,13 @@ export default function AdminUsagePage() {
         setUsers(result.users)
         setUnmatched(result.unmatched)
         setErrors(result.errors)
+        if (result.errors.summary) toast.error(result.errors.summary)
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setErrors({ summary: errorMessage(err, t("errors.loadUsageFailed")) })
+          const message = errorMessage(err, t("errors.loadUsageFailed"))
+          setErrors({ summary: message })
+          toast.error(message)
         }
       })
       .finally(() => {
@@ -299,12 +305,6 @@ export default function AdminUsagePage() {
           </div>
         </div>
       </div>
-
-      {errors.summary && (
-        <Alert variant="destructive">
-          <AlertDescription>{errors.summary}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <UsageOverview

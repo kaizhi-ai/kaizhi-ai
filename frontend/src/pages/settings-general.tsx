@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Check, Save } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { updateCurrentUser } from "@/lib/auth-client"
 import { useAuth } from "@/lib/auth-context"
@@ -10,7 +11,6 @@ import {
   supportedLanguage,
   type SupportedLanguage,
 } from "@/lib/i18n"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -41,7 +41,6 @@ export default function SettingsGeneralPage() {
   const [language, setLanguage] =
     useState<SupportedLanguage>(supportedLanguage())
   const [profileSaving, setProfileSaving] = useState(false)
-  const [profileError, setProfileError] = useState<string | null>(null)
   const [profileSaved, setProfileSaved] = useState(false)
   const [languageSaving, setLanguageSaving] = useState(false)
   const [languageError, setLanguageError] = useState<string | null>(null)
@@ -79,7 +78,6 @@ export default function SettingsGeneralPage() {
 
   async function handleProfileSubmit(e: FormEvent) {
     e.preventDefault()
-    setProfileError(null)
     setProfileSaved(false)
     setProfileSaving(true)
     try {
@@ -87,7 +85,7 @@ export default function SettingsGeneralPage() {
       await refresh()
       setProfileSaved(true)
     } catch (err) {
-      setProfileError(errorMessage(err) ?? t("errors.saveFailed"))
+      toast.error(errorMessage(err) ?? t("errors.saveFailed"))
     } finally {
       setProfileSaving(false)
     }
@@ -165,16 +163,9 @@ export default function SettingsGeneralPage() {
                 onChange={(e) => {
                   setName(e.target.value)
                   setProfileSaved(false)
-                  setProfileError(null)
                 }}
               />
             </Field>
-
-            {profileError && (
-              <Alert variant="destructive">
-                <AlertDescription>{profileError}</AlertDescription>
-              </Alert>
-            )}
 
             <div className="flex items-center justify-end gap-3">
               {profileSaved && !profileDirty && (

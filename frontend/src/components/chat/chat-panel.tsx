@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   createOpenAI,
   type OpenAILanguageModelResponsesOptions,
@@ -8,10 +8,16 @@ import { convertToModelMessages, stepCountIs, streamText } from "ai"
 import type { ChatTransport, UIMessage } from "ai"
 import { ArrowUp, Globe, Paperclip, Plus, Square, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 
 import { getToken } from "@/lib/auth-client"
 import {
   appendChatMessage,
+  chatMessagesToUIMessages,
+  createChat,
+  draftTitleFromText,
+  listChatMessages,
   textFromUIMessage,
   uiMessageToMessageParts,
   uploadChatAttachment,
@@ -20,7 +26,6 @@ import {
   type MessagePart,
 } from "@/lib/chats-client"
 import i18n from "@/lib/i18n"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   ChatContainerContent,
@@ -63,13 +68,11 @@ type FileUIPart = {
 
 type ChatPanelProps = {
   chatId?: string
-  initialMessages: UIMessage[]
-  initialMessagesChatId?: string
-  loading: boolean
-  error: string | null
-  onCreateChat: (text: string) => Promise<string>
-  onPersistedMessage: (message: ChatMessage) => void
-  onError: (message: string | null) => void
+}
+
+type PersistedMessagesState = {
+  chatId?: string
+  messages: ChatMessage[]
 }
 
 function isFilePart(part: { type: string }): part is FileUIPart {
@@ -326,24 +329,42 @@ function hasRenderableAssistantParts(parts: UIMessage["parts"]) {
   )
 }
 
-export function ChatPanel({
-  chatId,
-  initialMessages,
-  initialMessagesChatId,
-  loading,
-  error: pageError,
-  onCreateChat,
-  onPersistedMessage,
-  onError,
-}: ChatPanelProps) {
+export function ChatPanel({ chatId }: ChatPanelProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<LocalAttachment[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
-  const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [persistedState, setPersistedState] =
+    useState<PersistedMessagesState>({
+      chatId: undefined,
+      messages: [],
+    })
+  const [loadingMessages, setLoadingMessages] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sendingRef = useRef(false)
+  const skipLoadRef = useRef<string | undefined>(undefined)
+
+  const initialMessages = useMemo(() => {
+    if (!chatId || persistedState.chatId !== chatId) return []
+    return chatMessagesToUIMessages(persistedState.messages)
+  }, [chatId, persistedState])
+
+  const appendPersistedMessage = useCallback(
+    (message: ChatMessage, targetChatId = message.session_id) => {
+      setPersistedState((prev) => {
+        if (message.session_id !== targetChatId) return prev
+        if (prev.chatId !== targetChatId) return prev
+        if (prev.messages.some((item) => item.id === message.id)) return prev
+        return {
+          chatId: prev.chatId,
+          messages: [...prev.messages, message],
+        }
+      })
+    },
+    []
+  )
 
   const transport = useMemo<ChatTransport<UIMessage>>(
     () => ({
@@ -360,7 +381,7 @@ export function ChatPanel({
             "user",
             uiMessageToMessageParts(userMessage)
           )
-          onPersistedMessage(saved)
+          appendPersistedMessage(saved, targetChatId)
         }
 
         const token = getToken()
@@ -396,7 +417,7 @@ export function ChatPanel({
               "assistant",
               uiMessageToMessageParts(responseMessage)
             )
-            onPersistedMessage(saved)
+            appendPersistedMessage(saved, targetChatId)
           },
         })
       },
@@ -404,43 +425,68 @@ export function ChatPanel({
         return null
       },
     }),
-    [chatId, onPersistedMessage, t, webSearchEnabled]
+    [appendPersistedMessage, chatId, t, webSearchEnabled]
   )
 
-  const {
-    messages,
-    setMessages,
-    sendMessage,
-    status,
-    stop,
-    error: chatError,
-    clearError,
-  } = useChat({
-    messages: initialMessages,
-    transport,
-    onError: (err) => {
-      onError(t("chat.replyFailed", { message: err.message }))
-    },
-  })
+  const { messages, setMessages, sendMessage, status, stop, clearError } =
+    useChat({
+      messages: initialMessages,
+      transport,
+      onError: (err) => {
+        toast.error(t("chat.replyFailed", { message: err.message }))
+      },
+    })
 
   const isBusy = status === "submitted" || status === "streaming"
-  const visibleError = pageError ?? chatError?.message ?? null
 
-  const prevChatIdRef = useRef<string | undefined>(chatId)
   useEffect(() => {
-    const prevChatId = prevChatIdRef.current
-    prevChatIdRef.current = chatId
+    let cancelled = false
+    // queueMicrotask defers the loading-state set past the effect commit, so
+    // the lint rule against synchronous setState-in-effect stays satisfied.
+    queueMicrotask(() => {
+      if (cancelled) return
+      if (!chatId) {
+        setPersistedState({ chatId: undefined, messages: [] })
+        setLoadingMessages(false)
+        return
+      }
+      if (skipLoadRef.current === chatId) {
+        skipLoadRef.current = undefined
+        setLoadingMessages(false)
+        return
+      }
+      setLoadingMessages(true)
+      listChatMessages(chatId)
+        .then((next) => {
+          if (!cancelled) {
+            setPersistedState({ chatId, messages: next })
+          }
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setPersistedState({ chatId: undefined, messages: [] })
+            toast.error(
+              err instanceof Error
+                ? err.message
+                : t("errors.loadMessagesFailed")
+            )
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoadingMessages(false)
+        })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [chatId, t])
 
+  useEffect(() => {
     if (isBusy || sendingRef.current) {
       return
     }
 
-    if (prevChatId === undefined && chatId !== undefined) {
-      clearError()
-      return
-    }
-
-    if (initialMessagesChatId !== chatId) {
+    if (!chatId || persistedState.chatId !== chatId) {
       setMessages([])
       clearError()
       return
@@ -448,19 +494,26 @@ export function ChatPanel({
     setMessages(initialMessages)
     clearError()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, initialMessagesChatId, initialMessages, isBusy])
+  }, [chatId, persistedState.chatId, initialMessages, isBusy])
+
+  async function createChatForMessage(text: string) {
+    const created = await createChat(draftTitleFromText(text))
+    setPersistedState({ chatId: created.id, messages: [] })
+    skipLoadRef.current = created.id
+    navigate(`/chat/${created.id}`, { replace: true })
+    return created.id
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0 || uploading) return
 
-    setUploadError(null)
     const slots = MAX_ATTACHMENTS - attachments.length
     if (slots <= 0) {
-      setUploadError(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
+      toast.error(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
       return
     }
     if (files.length > slots) {
-      setUploadError(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
+      toast.error(t("chat.maxImages", { count: MAX_ATTACHMENTS }))
     }
 
     const picked = Array.from(files).slice(0, slots)
@@ -468,11 +521,11 @@ export function ChatPanel({
     try {
       for (const file of picked) {
         if (!ACCEPT_MIME.includes(file.type)) {
-          setUploadError(t("chat.selectFiles"))
+          toast.error(t("chat.selectFiles"))
           continue
         }
         if (file.size > MAX_FILE_SIZE) {
-          setUploadError(t("chat.fileTooLarge"))
+          toast.error(t("chat.fileTooLarge"))
           continue
         }
 
@@ -483,7 +536,7 @@ export function ChatPanel({
           ])
           setAttachments((prev) => [...prev, { ...uploaded, dataUrl }])
         } catch (err) {
-          setUploadError(
+          toast.error(
             err instanceof Error ? err.message : t("errors.uploadFailed")
           )
         }
@@ -503,6 +556,7 @@ export function ChatPanel({
     if (
       (!text && pendingAttachments.length === 0) ||
       isBusy ||
+      loadingMessages ||
       uploading ||
       sendingRef.current
     ) {
@@ -511,15 +565,13 @@ export function ChatPanel({
 
     setInput("")
     setAttachments([])
-    setUploadError(null)
-    onError(null)
     clearError()
     let savedUser: ChatMessage | null = null
     sendingRef.current = true
     try {
       const titleSeed =
         text || pendingAttachments[0]?.name || t("chat.imageMessage")
-      const targetChatId = chatId ?? (await onCreateChat(titleSeed))
+      const targetChatId = chatId ?? (await createChatForMessage(titleSeed))
       const storageParts: MessagePart[] = [
         ...pendingAttachments.map((attachment) => ({
           type: "file" as const,
@@ -554,28 +606,28 @@ export function ChatPanel({
           },
         }
       )
-      onPersistedMessage(savedUser)
+      appendPersistedMessage(savedUser, targetChatId)
       await sendPromise
     } catch (err) {
       if (!savedUser) {
         setInput(text)
         setAttachments(pendingAttachments)
+        toast.error(err instanceof Error ? err.message : t("errors.sendFailed"))
       }
-      onError(err instanceof Error ? err.message : t("errors.sendFailed"))
     } finally {
       sendingRef.current = false
     }
   }
 
   function renderBody() {
-    if (loading) {
+    if (loadingMessages) {
       return (
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
           {t("common.loading")}
         </div>
       )
     }
-    if (messages.length === 0 && !isBusy && !visibleError) {
+    if (messages.length === 0 && !isBusy) {
       return (
         <div className="flex flex-1 flex-col justify-center gap-3 pb-24">
           <h1 className="text-2xl font-semibold tracking-normal">
@@ -600,13 +652,6 @@ export function ChatPanel({
           {isBusy && (
             <Message className="items-start">
               <Loader variant="dots" />
-            </Message>
-          )}
-          {visibleError && (
-            <Message className="items-start">
-              <Alert variant="destructive">
-                <AlertDescription>{visibleError}</AlertDescription>
-              </Alert>
             </Message>
           )}
           <ChatContainerScrollAnchor />
@@ -727,7 +772,9 @@ export function ChatPanel({
                     size="icon-sm"
                     aria-label={t("chat.send")}
                     disabled={
-                      uploading || (!input.trim() && attachments.length === 0)
+                      loadingMessages ||
+                      uploading ||
+                      (!input.trim() && attachments.length === 0)
                     }
                     onClick={() => void submit()}
                   >
@@ -737,11 +784,6 @@ export function ChatPanel({
               </PromptInputAction>
             </PromptInputActions>
           </PromptInput>
-          {uploadError && (
-            <Alert variant="destructive" className="mt-2">
-              <AlertDescription>{uploadError}</AlertDescription>
-            </Alert>
-          )}
           <p className="mt-2 text-center text-xs text-muted-foreground">
             {t("chat.disclaimer")}
           </p>

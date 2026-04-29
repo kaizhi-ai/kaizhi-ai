@@ -1,31 +1,18 @@
 import {
   ArrowLeft,
   BarChart3,
-  ChevronsUpDown,
   DollarSign,
   Globe,
   KeyRound,
   LogIn,
-  LogOut,
-  Settings,
   Users,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { useAuth } from "@/lib/auth-context"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -33,20 +20,19 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
+import { SidebarUserFooter } from "@/components/sidebar-user-footer"
 
 export function AdminSidebar() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, signOut } = useAuth()
-  const displayName =
-    user?.name?.trim() || user?.email?.split("@")[0] || t("nav.notSignedIn")
-  const initial = (displayName || user?.email || "?").charAt(0).toUpperCase()
+  const { isMobile, setOpenMobile } = useSidebar()
 
-  function handleSignOut() {
-    signOut()
-    navigate("/login", { replace: true })
+  function handleNavigate(path: string) {
+    navigate(path)
+    if (isMobile) setOpenMobile(false)
   }
 
   return (
@@ -66,7 +52,7 @@ export function AdminSidebar() {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip={t("nav.backToChat")}
-                  onClick={() => navigate("/chat")}
+                  onClick={() => handleNavigate("/chat")}
                 >
                   <ArrowLeft />
                   <span>{t("nav.backToChat")}</span>
@@ -82,7 +68,7 @@ export function AdminSidebar() {
                 <SidebarMenuButton
                   tooltip={t("nav.usage")}
                   isActive={location.pathname.startsWith("/admin/usage")}
-                  onClick={() => navigate("/admin/usage")}
+                  onClick={() => handleNavigate("/admin/usage")}
                 >
                   <BarChart3 />
                   <span>{t("nav.usage")}</span>
@@ -92,7 +78,7 @@ export function AdminSidebar() {
                 <SidebarMenuButton
                   tooltip={t("nav.userManagement")}
                   isActive={location.pathname.startsWith("/admin/users")}
-                  onClick={() => navigate("/admin/users")}
+                  onClick={() => handleNavigate("/admin/users")}
                 >
                   <Users />
                   <span>{t("nav.userManagement")}</span>
@@ -102,7 +88,7 @@ export function AdminSidebar() {
                 <SidebarMenuButton
                   tooltip={t("nav.modelPrices")}
                   isActive={location.pathname.startsWith("/admin/model-prices")}
-                  onClick={() => navigate("/admin/model-prices")}
+                  onClick={() => handleNavigate("/admin/model-prices")}
                 >
                   <DollarSign />
                   <span>{t("nav.modelPrices")}</span>
@@ -114,7 +100,7 @@ export function AdminSidebar() {
                   isActive={location.pathname.startsWith(
                     "/admin/api-key-provider"
                   )}
-                  onClick={() => navigate("/admin/api-key-provider")}
+                  onClick={() => handleNavigate("/admin/api-key-provider")}
                 >
                   <KeyRound />
                   <span>{t("nav.apiKeyProvider")}</span>
@@ -127,7 +113,7 @@ export function AdminSidebar() {
                     "/admin/openai-compatibility-provider"
                   )}
                   onClick={() =>
-                    navigate("/admin/openai-compatibility-provider")
+                    handleNavigate("/admin/openai-compatibility-provider")
                   }
                 >
                   <Globe />
@@ -140,7 +126,7 @@ export function AdminSidebar() {
                   isActive={location.pathname.startsWith(
                     "/admin/oauth-providers"
                   )}
-                  onClick={() => navigate("/admin/oauth-providers")}
+                  onClick={() => handleNavigate("/admin/oauth-providers")}
                 >
                   <LogIn />
                   <span>{t("nav.oauthProvider")}</span>
@@ -150,49 +136,7 @@ export function AdminSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border p-0">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <SidebarMenuButton
-                    tooltip={user?.email ?? t("nav.notSignedIn")}
-                    size="lg"
-                    className="h-16 rounded-none px-3 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:!px-0"
-                  />
-                }
-              >
-                <Avatar size="sm">
-                  <AvatarFallback>{initial}</AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col items-start group-data-[collapsible=icon]:hidden">
-                  <span className="w-full truncate text-sm font-medium">
-                    {displayName}
-                  </span>
-                  {user?.email && (
-                    <span className="w-full truncate text-xs text-muted-foreground">
-                      {user.email}
-                    </span>
-                  )}
-                </div>
-                <ChevronsUpDown className="ml-auto text-muted-foreground group-data-[collapsible=icon]:hidden" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="start" className="w-56">
-                <DropdownMenuItem onClick={() => navigate("/settings/general")}>
-                  <Settings />
-                  {t("nav.settings")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut}>
-                  <LogOut />
-                  {t("nav.signOut")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
+      <SidebarUserFooter />
     </Sidebar>
   )
 }

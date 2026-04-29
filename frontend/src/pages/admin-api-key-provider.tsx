@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Eye, EyeOff, MoreHorizontal, Plus, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import { modelAliasFromName } from "@/lib/model-alias"
 import {
@@ -18,7 +19,6 @@ import {
   proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -110,7 +110,6 @@ export default function AdminAPIKeyProviderPage() {
   const { t } = useTranslation()
   const [keys, setKeys] = useState<ProviderAPIKey[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [addKind, setAddKind] = useState<ProviderAPIKeyKind>("claude")
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
@@ -130,7 +129,7 @@ export default function AdminAPIKeyProviderPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(
+          toast.error(
             err instanceof Error
               ? err.message
               : t("errors.loadAPIKeyProvidersFailed")
@@ -158,24 +157,24 @@ export default function AdminAPIKeyProviderPage() {
   async function handleSaved() {
     setAddOpen(false)
     setEditTarget(null)
-    setError(null)
     try {
       await refreshKeys()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("common.refreshFailed"))
+      toast.error(
+        err instanceof Error ? err.message : t("common.refreshFailed")
+      )
     }
   }
 
   async function confirmDelete() {
     if (!deleteTarget) return
     setDeleting(true)
-    setError(null)
     try {
       await deleteProviderAPIKey(deleteTarget.id)
       await refreshKeys()
       setDeleteTarget(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.deleteFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.deleteFailed"))
     } finally {
       setDeleting(false)
     }
@@ -199,12 +198,6 @@ export default function AdminAPIKeyProviderPage() {
           {t("common.addProvider")}
         </Button>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="overflow-hidden rounded-lg border">
         <Table className="min-w-[840px]">
@@ -427,13 +420,11 @@ function ProviderKeyForm({
     normalizeExcluded(initial?.excluded_models)
   )
   const [showKey, setShowKey] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fetching, setFetching] = useState(false)
   const proxyUrl = proxyURLFromEnabled(proxyEnabled)
 
   async function handleFetchModels() {
-    setError(null)
     setFetching(true)
     try {
       const ids = await fetchProviderAPIKeyModels({
@@ -445,7 +436,7 @@ function ProviderKeyForm({
       })
       setModels(ids.map((id) => ({ name: id, alias: modelAliasFromName(id) })))
     } catch (err) {
-      setError(
+      toast.error(
         err instanceof Error ? err.message : t("errors.fetchModelsFailed")
       )
     } finally {
@@ -455,14 +446,13 @@ function ProviderKeyForm({
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    setError(null)
 
     if (!baseUrl.trim()) {
-      setError(t("errors.baseURLRequired"))
+      toast.error(t("errors.baseURLRequired"))
       return
     }
     if (!isEdit && !apiKey.trim()) {
-      setError(t("errors.apiKeyRequired"))
+      toast.error(t("errors.apiKeyRequired"))
       return
     }
 
@@ -483,7 +473,7 @@ function ProviderKeyForm({
       }
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("errors.saveFailed"))
+      toast.error(err instanceof Error ? err.message : t("errors.saveFailed"))
     } finally {
       setSubmitting(false)
     }
@@ -558,11 +548,6 @@ function ProviderKeyForm({
           onChange={setExcludedModels}
         />
       </Field>
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

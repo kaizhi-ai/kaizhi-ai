@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react"
 import { RefreshCw } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
 
 import type { AuthUser } from "@/lib/auth-client"
 import { useAuth } from "@/lib/auth-context"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -134,7 +134,6 @@ export default function SettingsUsagePage() {
   const { t, i18n } = useTranslation()
   const { user, refresh } = useAuth()
   const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const usdFmt = useMemo(
     () =>
       new Intl.NumberFormat(i18n.language, {
@@ -162,11 +161,10 @@ export default function SettingsUsagePage() {
 
   async function handleRefresh() {
     setRefreshing(true)
-    setError(null)
     try {
       await refresh()
     } catch (err) {
-      setError(errorMessage(err, t("errors.loadUsageFailed")))
+      toast.error(errorMessage(err, t("errors.loadUsageFailed")))
     } finally {
       setRefreshing(false)
     }
@@ -183,12 +181,6 @@ export default function SettingsUsagePage() {
           {refreshing ? t("common.loading") : t("common.refresh")}
         </Button>
       </div>
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         {windows.map((item) => (
