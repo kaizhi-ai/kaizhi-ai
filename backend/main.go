@@ -23,6 +23,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v6/sdk/config"
 	"kaizhi/backend/internal/adminusers"
 	"kaizhi/backend/internal/apikeys"
+	"kaizhi/backend/internal/appconfig"
 	"kaizhi/backend/internal/auth"
 	"kaizhi/backend/internal/chats"
 	"kaizhi/backend/internal/modelprices"
@@ -37,7 +38,8 @@ import (
 const (
 	kaizhiDataDirEnv         = "KAIZHI_DATA_DIR"
 	kaizhiProxyURLEnv        = "KAIZHI_PROXY_URL"
-	kaizhiDefaultLanguageEnv = "KAIZHI_DEFAULT_LANGUAGE"
+	kaizhiDefaultLanguageEnv = "KAIZHI_PUBLIC_DEFAULT_LANGUAGE"
+	kaizhiPublicBaseURLEnv   = "KAIZHI_PUBLIC_BASE_URL"
 	defaultDataDirName       = "data"
 	defaultConfigName        = "config.yaml"
 	defaultAuthDirName       = "auths"
@@ -148,6 +150,7 @@ func main() {
 	authHandlers := auth.NewHandlers(userStore, apiKeyService)
 	adminUserHandlers := adminusers.NewHandlers(userStore, adminusers.NewStore(db), apiKeyService)
 	apiKeyHandlers := apikeys.NewHandlers(apiKeyStore, apiKeyService, userStore)
+	appConfigHandlers := appconfig.NewHandlers(os.Getenv(kaizhiPublicBaseURLEnv))
 	usageHandlers := appusage.NewHandlers(usageStore, userStore, apiKeyService)
 	modelPriceHandlers := modelprices.NewHandlers(modelPriceStore, userStore, apiKeyService)
 	mediaRoot := filepath.Join(defaultDataDirName, defaultMediaDir)
@@ -217,6 +220,7 @@ func main() {
 			api.WithRouterConfigurator(func(engine *gin.Engine, _ *handlers.BaseAPIHandler, _ *config.Config) {
 				authHandlers.RegisterRoutes(engine)
 				adminUserHandlers.RegisterRoutes(engine)
+				appConfigHandlers.RegisterRoutes(engine)
 				apiKeyHandlers.RegisterRoutes(engine)
 				usageHandlers.RegisterRoutes(engine)
 				modelPriceHandlers.RegisterRoutes(engine)

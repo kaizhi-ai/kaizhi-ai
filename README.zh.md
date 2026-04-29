@@ -2,7 +2,9 @@
 
 [English](./README.md) | 简体中文
 
-面向团队的多功能 AI 网站：网页聊天、账号管理、API Key 分发、用量统计、Provider 管理、OAuth 授权和代理能力一体化。
+面向团队内部成员的多功能 AI 网站：网页聊天、账号管理、API Key 分发、用量统计、Provider 管理、OAuth 授权和代理能力一体化。
+
+Kaizhi 定位为组织或团队内部可信成员使用的内部 AI 平台，不是面向公网匿名用户的自助 SaaS。
 
 ## 主要功能
 
@@ -22,13 +24,15 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-this-admin-password
 KAIZHI_DATA_DIR=/data
 KAIZHI_PROXY_URL=
-KAIZHI_DEFAULT_LANGUAGE=zh-CN
+KAIZHI_PUBLIC_DEFAULT_LANGUAGE=zh-CN
+KAIZHI_PUBLIC_BASE_URL=https://kaizhi.example.com
 ```
 
 - `API_KEY_PEPPER`：生产环境必须使用足够长的随机值，部署后不要更换。
 - `KAIZHI_DATA_DIR`：运行时数据目录（`config.yaml`、OAuth 文件、附件等）。
 - `KAIZHI_PROXY_URL`：可选上游代理，配置后通过内置 xray SOCKS5 出口。
-- `KAIZHI_DEFAULT_LANGUAGE`：新建用户的默认语言，支持 `zh-CN` 或 `en-US`。
+- `KAIZHI_PUBLIC_DEFAULT_LANGUAGE`：新建用户的默认语言，支持 `zh-CN` 或 `en-US`。
+- `KAIZHI_PUBLIC_BASE_URL`：可选的公开访问地址，用于客户端配置示例，不包含 `/v1`；当 Kaizhi 部署在公网域名或反向代理后面时建议配置。
 
 ## 运行
 

@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-Kaizhi is a multi-purpose AI platform for teams. A single service combines web chat, account management, user-issued API keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), provider management (OAuth / API key / OpenAI-compatible), usage tracking, per-user model cost quotas, and an embedded xray-core proxy. The Go backend embeds CLIProxyAPI as the unified model entrypoint and serves the built React SPA from a single binary.
+Kaizhi is a multi-purpose AI platform for internal team members. It is designed for trusted members of an organization or team, not as a public self-service SaaS. A single service combines web chat, account management, user-issued API keys for third-party tools (Claude, Codex, Gemini, Droid, etc.), provider management (OAuth / API key / OpenAI-compatible), usage tracking, per-user model cost quotas, and an embedded xray-core proxy. The Go backend embeds CLIProxyAPI as the unified model entrypoint and serves the built React SPA from a single binary.
 
 ## Tech Stack
 

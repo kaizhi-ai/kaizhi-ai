@@ -2,7 +2,9 @@
 
 English | [简体中文](./README.zh.md)
 
-A multi-purpose AI platform for teams: web chat, account management, API key distribution, usage tracking, provider management, OAuth authorization, and proxy support — all in one service.
+A multi-purpose AI platform for internal team members: web chat, account management, API key distribution, usage tracking, provider management, OAuth authorization, and proxy support — all in one service.
+
+Kaizhi is intended for trusted members of an organization or team, not as a public self-service SaaS.
 
 ## Features
 
@@ -22,13 +24,15 @@ ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-this-admin-password
 KAIZHI_DATA_DIR=/data
 KAIZHI_PROXY_URL=
-KAIZHI_DEFAULT_LANGUAGE=zh-CN
+KAIZHI_PUBLIC_DEFAULT_LANGUAGE=zh-CN
+KAIZHI_PUBLIC_BASE_URL=https://kaizhi.example.com
 ```
 
 - `API_KEY_PEPPER`: must be a sufficiently long random value in production; do not change after deployment.
 - `KAIZHI_DATA_DIR`: runtime data directory (`config.yaml`, OAuth files, attachments, etc.).
 - `KAIZHI_PROXY_URL`: optional upstream proxy, routed through the built-in xray SOCKS5 outbound.
-- `KAIZHI_DEFAULT_LANGUAGE`: default language for newly created users. Supports `zh-CN` or `en-US`.
+- `KAIZHI_PUBLIC_DEFAULT_LANGUAGE`: default language for newly created users. Supports `zh-CN` or `en-US`.
+- `KAIZHI_PUBLIC_BASE_URL`: optional public base URL shown in client setup examples, without `/v1`; useful when Kaizhi is served behind a public domain or reverse proxy.
 
 ## Running
 

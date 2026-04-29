@@ -171,6 +171,32 @@ const resources = {
       },
       apiKeys: {
         active: "有效",
+        clientGuide: {
+          apiKeyPlaceholder: "kz_live_xxx",
+          client: "客户端",
+          clients: {
+            claudeCode: "Claude Code",
+            codex: "Codex",
+            droid: "Droid",
+            gemini: "Gemini",
+            openCode: "OpenCode",
+          },
+          description:
+            "先创建并复制完整 API Key；再按客户端、操作系统和配置方式选择下方片段。完整 Key 关闭后不会再次显示；如果丢失，请创建新的 Key。",
+          method: "配置方式",
+          methods: {
+            config: "配置文件",
+            env: "环境变量",
+          },
+          platform: "操作系统",
+          platforms: {
+            linux: "Linux",
+            macos: "macOS",
+            windows: "Windows",
+          },
+          shell: "终端",
+          title: "使用 API Key 配置客户端",
+        },
         copyDescriptionCreated:
           "请立即复制并妥善保管。关闭窗口后将只显示 Key 前缀。",
         createTitle: "创建 API Key",
@@ -563,6 +589,32 @@ const resources = {
       },
       apiKeys: {
         active: "Active",
+        clientGuide: {
+          apiKeyPlaceholder: "kz_live_xxx",
+          client: "Client",
+          clients: {
+            claudeCode: "Claude Code",
+            codex: "Codex",
+            droid: "Droid",
+            gemini: "Gemini",
+            openCode: "OpenCode",
+          },
+          description:
+            "Create and copy a full API key first, then choose the matching client, operating system, and setup method below. The full key is shown only once; create a new key if you lose it.",
+          method: "Setup method",
+          methods: {
+            config: "Config file",
+            env: "Environment variables",
+          },
+          platform: "Operating system",
+          platforms: {
+            linux: "Linux",
+            macos: "macOS",
+            windows: "Windows",
+          },
+          shell: "Terminal",
+          title: "Configure clients with an API key",
+        },
         copyDescriptionCreated:
           "Copy and store it now. After this dialog closes, only the key prefix will be shown.",
         createTitle: "Create API key",
