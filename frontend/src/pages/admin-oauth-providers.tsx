@@ -27,6 +27,7 @@ import {
   proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,8 +53,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -254,7 +255,7 @@ export default function AdminOAuthProvidersPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">OAuth Provider</h1>
@@ -273,9 +274,9 @@ export default function AdminOAuthProvidersPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       <div className="overflow-hidden rounded-lg border">
@@ -400,8 +401,8 @@ export default function AdminOAuthProvidersPage() {
               {t("provider.oauthLoginDescription")}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="oauth-provider">{t("common.type")}</Label>
+          <Field>
+            <FieldLabel htmlFor="oauth-provider">{t("common.type")}</FieldLabel>
             <Select
               value={addProvider}
               onValueChange={(value) =>
@@ -419,7 +420,7 @@ export default function AdminOAuthProvidersPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
           <OAuthFlow
             key={addProvider}
             provider={addProvider}
@@ -445,7 +446,6 @@ export default function AdminOAuthProvidersPage() {
                 ? t("provider.editTitle", { name: fileTitle(proxyTarget.file) })
                 : ""}
             </DialogTitle>
-            <DialogDescription>{t("proxy.fieldDescription")}</DialogDescription>
           </DialogHeader>
           {proxyTarget && (
             <ProxyURLForm
@@ -567,27 +567,29 @@ function OAuthFlow({
   if (!authUrl) {
     return (
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          {t(meta.descriptionKey)}
-        </p>
+        <FieldDescription>{t(meta.descriptionKey)}</FieldDescription>
         {provider === "gemini" && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="gemini-project">Project ID</Label>
+          <Field>
+            <FieldLabel htmlFor="gemini-project">Project ID</FieldLabel>
             <Input
               id="gemini-project"
               placeholder={t("provider.geminiProjectPlaceholder")}
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
-              className="h-9 font-mono"
+              className="font-mono"
             />
-          </div>
+          </Field>
         )}
         <ProxySwitchField
           id="oauth-proxy-new"
           checked={proxyEnabled}
           onCheckedChange={setProxyEnabled}
         />
-        {error && <p className="text-sm break-all text-destructive">{error}</p>}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
         <div className="flex justify-end">
           <Button
             type="button"
@@ -604,20 +606,19 @@ function OAuthFlow({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label>{t("provider.oauthAuthURL")}</Label>
+      <Field>
+        <FieldLabel>{t("provider.oauthAuthURL")}</FieldLabel>
         <div className="flex gap-2">
           <Input
             readOnly
             value={authUrl}
-            className="h-9 flex-1 bg-muted/40 font-mono text-xs"
+            className="flex-1 font-mono text-xs"
             onFocus={(event) => event.currentTarget.select()}
           />
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9"
             aria-label={t("common.copy")}
             onClick={() => void copyAuthURL()}
           >
@@ -627,16 +628,17 @@ function OAuthFlow({
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9"
             aria-label={t("provider.oauthOpen")}
             onClick={() => window.open(authUrl, "_blank", "noopener")}
           >
             <ExternalLink />
           </Button>
         </div>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <Label htmlFor="oauth-redirect">{t("provider.oauthRedirectURL")}</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="oauth-redirect">
+          {t("provider.oauthRedirectURL")}
+        </FieldLabel>
         <Textarea
           id="oauth-redirect"
           required
@@ -645,10 +647,14 @@ function OAuthFlow({
           placeholder="http://localhost:1455/?code=...&state=..."
           value={redirectUrl}
           onChange={(event) => setRedirectUrl(event.target.value)}
-          className="field-sizing-fixed max-w-full min-w-0 resize-y overflow-x-hidden font-mono text-xs [overflow-wrap:anywhere] break-all whitespace-pre-wrap"
+          className="font-mono text-xs"
         />
-      </div>
-      {error && <p className="text-sm break-all text-destructive">{error}</p>}
+      </Field>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting || !redirectUrl.trim()}>
           {submitting ? t("common.submittingLogin") : t("common.submit")}
@@ -697,7 +703,11 @@ function ProxyURLForm({
         checked={proxyEnabled}
         onCheckedChange={setProxyEnabled}
       />
-      {error && <p className="text-sm break-all text-destructive">{error}</p>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

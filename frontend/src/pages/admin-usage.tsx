@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
-import { RefreshCw } from "lucide-react"
+import { Plus, RefreshCw } from "lucide-react"
 import { useTranslation } from "react-i18next"
+import { useNavigate } from "react-router-dom"
 
+import {
+  listUnmatchedModels,
+  type UnmatchedModel,
+} from "@/lib/admin-model-prices-client"
 import {
   getAdminUsageSummary,
   listAdminUsageByModel,
@@ -10,9 +15,14 @@ import {
   type UsageSummary,
   type UserUsage,
 } from "@/lib/usage-client"
+import { cn } from "@/lib/utils"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Card, CardContent } from "@/components/ui/card"
+import { DatePicker } from "@/components/ui/date-picker"
+import { Field, FieldLabel } from "@/components/ui/field"
+import { Progress } from "@/components/ui/progress"
 import {
   Table,
   TableBody,
@@ -22,13 +32,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-type UsageSection = "summary" | "models" | "users"
+type UsageSection = "summary" | "models" | "users" | "unmatched"
 type UsageErrors = Partial<Record<UsageSection, string>>
 
 type UsageLoadResult = {
   summary: UsageSummary | null
   models: ModelUsage[]
   users: UserUsage[]
+  unmatched: UnmatchedModel[]
   errors: UsageErrors
 }
 
@@ -67,6 +78,36 @@ function formatFailureRate(
   return fmt.format((failedCount ?? 0) / requestCount)
 }
 
+function failureRateValue(
+  requestCount: number | undefined,
+  failedCount: number | undefined
+) {
+  if (!requestCount || requestCount <= 0) return 0
+  return (failedCount ?? 0) / requestCount
+}
+
+function distributionShareLabel(
+  value: number | undefined,
+  total: number | undefined,
+  fmt: Intl.NumberFormat
+) {
+  if (!total || total <= 0) return fmt.format(0)
+  return fmt.format((value ?? 0) / total)
+}
+
+function modelCostValue(item: ModelUsage) {
+  return numericCost(item.cost_usd) ?? 0
+}
+
+function userCostValue(item: UserUsage) {
+  return numericCost(item.cost_usd) ?? 0
+}
+
+function distributionPercent(value: number, total: number) {
+  if (total <= 0) return 0
+  return Math.min(Math.max((value / total) * 100, 0), 100)
+}
+
 function errorMessage(err: unknown, fallback: string) {
   return err instanceof Error ? err.message : fallback
 }
@@ -78,23 +119,29 @@ function settledError(result: PromiseRejectedResult, fallback: string): string {
 async function loadUsageRange(
   from: string,
   to: string,
-  fallback: string
+  fallback: string,
+  unmatchedFallback = fallback
 ): Promise<UsageLoadResult> {
   const range = { from, to }
-  const [summaryResult, modelItems, userItems] = await Promise.all([
-    getAdminUsageSummary(range).then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason: unknown) => ({ status: "rejected" as const, reason })
-    ),
-    listAdminUsageByModel(range).then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason: unknown) => ({ status: "rejected" as const, reason })
-    ),
-    listAdminUsageByUser(range).then(
-      (value) => ({ status: "fulfilled" as const, value }),
-      (reason: unknown) => ({ status: "rejected" as const, reason })
-    ),
-  ])
+  const [summaryResult, modelItems, userItems, unmatchedItems] =
+    await Promise.all([
+      getAdminUsageSummary(range).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason: unknown) => ({ status: "rejected" as const, reason })
+      ),
+      listAdminUsageByModel(range).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason: unknown) => ({ status: "rejected" as const, reason })
+      ),
+      listAdminUsageByUser(range).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason: unknown) => ({ status: "rejected" as const, reason })
+      ),
+      listUnmatchedModels(from, to).then(
+        (value) => ({ status: "fulfilled" as const, value }),
+        (reason: unknown) => ({ status: "rejected" as const, reason })
+      ),
+    ])
   const errors: UsageErrors = {}
   if (summaryResult.status === "rejected") {
     errors.summary = settledError(summaryResult, fallback)
@@ -105,11 +152,16 @@ async function loadUsageRange(
   if (userItems.status === "rejected") {
     errors.users = settledError(userItems, fallback)
   }
+  if (unmatchedItems.status === "rejected") {
+    errors.unmatched = settledError(unmatchedItems, unmatchedFallback)
+  }
   return {
     summary:
       summaryResult.status === "fulfilled" ? summaryResult.value.usage : null,
     models: modelItems.status === "fulfilled" ? modelItems.value : [],
     users: userItems.status === "fulfilled" ? userItems.value : [],
+    unmatched:
+      unmatchedItems.status === "fulfilled" ? unmatchedItems.value : [],
     errors,
   }
 }
@@ -121,6 +173,7 @@ export default function AdminUsagePage() {
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [models, setModels] = useState<ModelUsage[]>([])
   const [users, setUsers] = useState<UserUsage[]>([])
+  const [unmatched, setUnmatched] = useState<UnmatchedModel[]>([])
   const [loading, setLoading] = useState(true)
   const [errors, setErrors] = useState<UsageErrors>({})
 
@@ -151,10 +204,16 @@ export default function AdminUsagePage() {
     setLoading(true)
     setErrors({})
     try {
-      const result = await loadUsageRange(from, to, t("errors.loadUsageFailed"))
+      const result = await loadUsageRange(
+        from,
+        to,
+        t("errors.loadUsageFailed"),
+        t("errors.loadUnmatchedModelsFailed")
+      )
       setSummary(result.summary)
       setModels(result.models)
       setUsers(result.users)
+      setUnmatched(result.unmatched)
       setErrors(result.errors)
     } catch (err) {
       setErrors({ summary: errorMessage(err, t("errors.loadUsageFailed")) })
@@ -165,12 +224,18 @@ export default function AdminUsagePage() {
 
   useEffect(() => {
     let cancelled = false
-    loadUsageRange(from, to, t("errors.loadUsageFailed"))
+    loadUsageRange(
+      from,
+      to,
+      t("errors.loadUsageFailed"),
+      t("errors.loadUnmatchedModelsFailed")
+    )
       .then((result) => {
         if (cancelled) return
         setSummary(result.summary)
         setModels(result.models)
         setUsers(result.users)
+        setUnmatched(result.unmatched)
         setErrors(result.errors)
       })
       .catch((err: unknown) => {
@@ -192,37 +257,36 @@ export default function AdminUsagePage() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex max-w-3xl flex-col gap-2">
             <h1 className="text-xl font-semibold">{t("adminUsage.title")}</h1>
-            <p className="text-sm text-muted-foreground">
-              {t("adminUsage.description")}
-            </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <div className="grid gap-1.5">
-              <Label htmlFor="usage-from">{t("adminUsage.from")}</Label>
-              <Input
+            <Field>
+              <FieldLabel htmlFor="usage-from">
+                {t("adminUsage.from")}
+              </FieldLabel>
+              <DatePicker
                 id="usage-from"
-                type="date"
                 value={from}
-                onChange={(event) => {
+                locale={i18n.language}
+                onValueChange={(value) => {
                   setLoading(true)
                   setErrors({})
-                  setFrom(event.target.value)
+                  setFrom(value)
                 }}
               />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="usage-to">{t("adminUsage.to")}</Label>
-              <Input
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="usage-to">{t("adminUsage.to")}</FieldLabel>
+              <DatePicker
                 id="usage-to"
-                type="date"
                 value={to}
-                onChange={(event) => {
+                locale={i18n.language}
+                onValueChange={(value) => {
                   setLoading(true)
                   setErrors({})
-                  setTo(event.target.value)
+                  setTo(value)
                 }}
               />
-            </div>
+            </Field>
             <Button
               type="button"
               onClick={() => void handleRefresh()}
@@ -237,83 +301,39 @@ export default function AdminUsagePage() {
       </div>
 
       {errors.summary && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {errors.summary}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{errors.summary}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <Metric
-          label={t("adminUsage.cost")}
-          value={formatUSD(summary?.cost_usd, usdFmt)}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <UsageOverview
+          summary={summary}
+          numberFmt={numberFmt}
+          percentFmt={percentFmt}
+          usdFmt={usdFmt}
         />
-        <Metric
-          label={t("adminUsage.requests")}
-          value={formatNumber(summary?.request_count, numberFmt)}
-          detail={t("adminUsage.failuresDetail", {
-            count: formatNumber(summary?.failed_count, numberFmt),
-          })}
-        />
-        <Metric
-          label={t("adminUsage.failureRate")}
-          value={formatFailureRate(
-            summary?.request_count,
-            summary?.failed_count,
-            percentFmt
-          )}
-          detail={t("adminUsage.failureRateDetail", {
-            failed: formatNumber(summary?.failed_count, numberFmt),
-            total: formatNumber(summary?.request_count, numberFmt),
-          })}
-        />
-        <Metric
-          label={t("adminUsage.totalTokens")}
-          value={formatNumber(summary?.total_tokens, numberFmt)}
-          detail={t("adminUsage.unpricedTokensDetail", {
-            count: formatNumber(summary?.unpriced_tokens, numberFmt),
-          })}
-        />
-        <Metric
-          label={t("adminUsage.cacheTokens")}
-          value={formatNumber(summary?.cached_tokens, numberFmt)}
-          detail={t("adminUsage.cacheTokensDetail", {
-            read: formatNumber(summary?.cache_read_tokens, numberFmt),
-            write: formatNumber(summary?.cache_write_tokens, numberFmt),
-          })}
-        />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Metric
-          label={t("adminUsage.inputTokens")}
-          value={formatNumber(summary?.input_tokens, numberFmt)}
-        />
-        <Metric
-          label={t("adminUsage.outputTokens")}
-          value={formatNumber(summary?.output_tokens, numberFmt)}
-        />
-        <Metric
-          label={t("adminUsage.reasoningTokens")}
-          value={formatNumber(summary?.reasoning_tokens, numberFmt)}
+        <ModelDistribution
+          loading={loading}
+          items={models}
+          error={errors.models}
+          numberFmt={numberFmt}
+          percentFmt={percentFmt}
+          usdFmt={usdFmt}
         />
       </div>
 
       <div className="flex flex-col gap-6">
         <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">{t("adminUsage.models")}</h2>
-          <ModelUsageTable
+          <UnmatchedModelsList
             loading={loading}
-            items={models}
-            error={errors.models}
+            items={unmatched}
+            error={errors.unmatched}
             numberFmt={numberFmt}
-            percentFmt={percentFmt}
-            usdFmt={usdFmt}
           />
         </section>
-
         <section className="flex flex-col gap-3">
-          <h2 className="text-base font-semibold">{t("adminUsage.users")}</h2>
-          <UserUsageTable
+          <UserUsageList
             loading={loading}
             items={users}
             error={errors.users}
@@ -327,7 +347,79 @@ export default function AdminUsagePage() {
   )
 }
 
-function Metric({
+function UsageOverview({
+  summary,
+  numberFmt,
+  percentFmt,
+  usdFmt,
+}: {
+  summary: UsageSummary | null
+  numberFmt: Intl.NumberFormat
+  percentFmt: Intl.NumberFormat
+  usdFmt: Intl.NumberFormat
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <Card className="py-5">
+      <CardContent className="px-5">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-medium">{t("adminUsage.overview")}</h2>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+          <div className="min-w-0">
+            <div className="text-sm text-muted-foreground">
+              {t("adminUsage.cost")}
+            </div>
+            <div className="mt-1 truncate text-3xl font-semibold tabular-nums">
+              {formatUSD(summary?.cost_usd, usdFmt)}
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SummaryItem
+              label={t("adminUsage.requests")}
+              value={formatNumber(summary?.request_count, numberFmt)}
+              detail={t("adminUsage.failuresDetail", {
+                count: formatNumber(summary?.failed_count, numberFmt),
+              })}
+            />
+            <SummaryItem
+              label={t("adminUsage.failureRate")}
+              value={formatFailureRate(
+                summary?.request_count,
+                summary?.failed_count,
+                percentFmt
+              )}
+              detail={t("adminUsage.failureRateDetail", {
+                failed: formatNumber(summary?.failed_count, numberFmt),
+                total: formatNumber(summary?.request_count, numberFmt),
+              })}
+            />
+            <SummaryItem
+              label={t("adminUsage.totalTokens")}
+              value={formatNumber(summary?.total_tokens, numberFmt)}
+              detail={t("adminUsage.unpricedTokensDetail", {
+                count: formatNumber(summary?.unpriced_tokens, numberFmt),
+              })}
+            />
+            <SummaryItem
+              label={t("adminUsage.cacheTokens")}
+              value={formatNumber(summary?.cached_tokens, numberFmt)}
+              detail={t("adminUsage.cacheTokensDetail", {
+                read: formatNumber(summary?.cache_read_tokens, numberFmt),
+                write: formatNumber(summary?.cache_write_tokens, numberFmt),
+              })}
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SummaryItem({
   label,
   value,
   detail,
@@ -337,17 +429,21 @@ function Metric({
   detail?: string
 }) {
   return (
-    <div className="rounded-lg border p-4">
-      <div className="text-sm text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
+    <div className="min-w-0">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate text-xl font-semibold tabular-nums">
+        {value}
+      </div>
       {detail && (
-        <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
+        <div className="mt-1 truncate text-xs text-muted-foreground">
+          {detail}
+        </div>
       )}
     </div>
   )
 }
 
-function ModelUsageTable({
+function ModelDistribution({
   loading,
   items,
   error,
@@ -363,153 +459,239 @@ function ModelUsageTable({
   usdFmt: Intl.NumberFormat
 }) {
   const { t } = useTranslation()
+  const totalCost = items.reduce((sum, item) => sum + modelCostValue(item), 0)
+  const totalRequests = items.reduce(
+    (sum, item) => sum + (item.request_count ?? 0),
+    0
+  )
+  const rankByCost = totalCost > 0
+  const ranked = [...items]
+    .sort((a, b) =>
+      rankByCost
+        ? modelCostValue(b) - modelCostValue(a)
+        : (b.request_count ?? 0) - (a.request_count ?? 0)
+    )
+    .slice(0, 5)
 
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <Table className="min-w-[1200px]">
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-28">{t("adminUsage.provider")}</TableHead>
-            <TableHead className="min-w-64">{t("adminUsage.model")}</TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.requests")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.failures")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.failureRate")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.inputTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.outputTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.reasoningTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.cacheReadTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.cacheWriteTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.totalTokens")}
-            </TableHead>
-            <TableHead className="text-right">{t("adminUsage.cost")}</TableHead>
-            <TableHead>{t("adminUsage.pricing")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+    <Card className="py-5">
+      <CardContent className="px-5">
+        <div className="min-w-0">
+          <h2 className="text-base font-medium">
+            {t("adminUsage.modelDistribution")}
+          </h2>
+        </div>
+
+        <div className="mt-5 grid gap-4">
           {loading ? (
-            <TableRow>
-              <TableCell
-                colSpan={13}
-                className="py-10 text-center text-muted-foreground"
-              >
-                {t("common.loading")}
-              </TableCell>
-            </TableRow>
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {t("common.loading")}
+            </div>
           ) : error ? (
-            <TableRow>
-              <TableCell
-                colSpan={13}
-                className="py-10 text-center text-destructive"
-              >
-                {error}
-              </TableCell>
-            </TableRow>
-          ) : items.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={13}
-                className="py-10 text-center text-muted-foreground"
-              >
-                {t("adminUsage.noModels")}
-              </TableCell>
-            </TableRow>
+            <div className="py-8 text-center text-sm text-destructive">
+              {error}
+            </div>
+          ) : ranked.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              {t("adminUsage.noModels")}
+            </div>
           ) : (
-            items.map((item) => (
-              <TableRow key={`${item.provider}:${item.model}`}>
-                <TableCell className="font-mono text-xs">
-                  {item.provider || "-"}
-                </TableCell>
-                <TableCell className="max-w-80 truncate font-mono text-xs">
-                  {item.model}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.request_count, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.failed_count, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatFailureRate(
-                    item.request_count,
-                    item.failed_count,
-                    percentFmt
-                  )}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.input_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.output_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.reasoning_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.cache_read_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.cache_write_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.total_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatUSD(item.cost_usd, usdFmt)}
-                </TableCell>
-                <TableCell>
-                  <PricingStatus item={item} numberFmt={numberFmt} />
-                </TableCell>
-              </TableRow>
-            ))
+            ranked.map((item, index) => {
+              const value = rankByCost
+                ? modelCostValue(item)
+                : item.request_count
+              const total = rankByCost ? totalCost : totalRequests
+              return (
+                <DistributionBar
+                  key={`${item.provider}:${item.model}`}
+                  label={item.model}
+                  detail={item.provider || "-"}
+                  value={
+                    rankByCost
+                      ? formatUSD(item.cost_usd, usdFmt)
+                      : formatNumber(item.request_count, numberFmt)
+                  }
+                  share={distributionShareLabel(value, total, percentFmt)}
+                  percent={distributionPercent(value, total)}
+                  barClassName={
+                    item.price_missing
+                      ? "bg-amber-500"
+                      : MODEL_DISTRIBUTION_COLORS[
+                          index % MODEL_DISTRIBUTION_COLORS.length
+                        ]
+                  }
+                />
+              )
+            })
           )}
-        </TableBody>
-      </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+const MODEL_DISTRIBUTION_COLORS = [
+  "bg-primary",
+  "bg-chart-2",
+  "bg-chart-4",
+  "bg-chart-5",
+  "bg-chart-1",
+]
+
+function DistributionBar({
+  label,
+  detail,
+  value,
+  share,
+  percent,
+  barClassName,
+}: {
+  label: string
+  detail?: string
+  value: string
+  share: string
+  percent: number
+  barClassName: string
+}) {
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{label}</span>
+          {detail && (
+            <span className="block truncate text-xs text-muted-foreground">
+              {detail}
+            </span>
+          )}
+        </span>
+        <span className="font-medium whitespace-nowrap tabular-nums">
+          {value}
+          <span className="ml-2 text-xs text-muted-foreground">{share}</span>
+        </span>
+      </div>
+      <Progress
+        value={percent}
+        className="h-2"
+        indicatorClassName={barClassName}
+      />
     </div>
   )
 }
 
-function PricingStatus({
-  item,
+function UnmatchedModelsList({
+  loading,
+  items,
+  error,
   numberFmt,
 }: {
-  item: ModelUsage
+  loading: boolean
+  items: UnmatchedModel[]
+  error?: string
   numberFmt: Intl.NumberFormat
 }) {
   const { t } = useTranslation()
-  if (!item.price_missing) {
-    return (
-      <span className="inline-flex rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
-        {t("adminUsage.priced")}
-      </span>
-    )
+  const navigate = useNavigate()
+
+  function addModelPrice(model: string) {
+    navigate({
+      pathname: "/admin/model-prices",
+      search: `?model=${encodeURIComponent(model)}`,
+    })
   }
+
+  const rows = [...items].sort(
+    (a, b) => (b.request_count ?? 0) - (a.request_count ?? 0)
+  )
+
   return (
-    <span className="inline-flex rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">
-      {t("adminUsage.priceMissingWithTokens", {
-        count: formatNumber(item.unpriced_tokens, numberFmt),
-      })}
-    </span>
+    <Card className="py-0">
+      <CardContent className="px-0">
+        <div className="border-b px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-base font-medium">
+              {t("adminUsage.unmatchedModels")}
+            </h2>
+          </div>
+        </div>
+
+        <div className="px-5 py-5">
+          {loading ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              {t("common.loading")}
+            </div>
+          ) : error ? (
+            <div className="py-10 text-center text-sm text-destructive">
+              {error}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              {t("adminUsage.noUnmatchedModels")}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-52">
+                      {t("adminUsage.model")}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {t("adminUsage.requests")}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {t("adminUsage.totalTokens")}
+                    </TableHead>
+                    <TableHead className="min-w-40">
+                      {t("adminUsage.firstSeen")}
+                    </TableHead>
+                    <TableHead className="min-w-40">
+                      {t("adminUsage.lastSeen")}
+                    </TableHead>
+                    <TableHead className="w-32"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((item) => (
+                    <TableRow key={item.model}>
+                      <TableCell className="font-mono text-xs">
+                        {item.model}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatNumber(item.request_count, numberFmt)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatNumber(item.total_tokens, numberFmt)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {item.first_seen}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {item.last_seen}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => addModelPrice(item.model)}
+                        >
+                          <Plus />
+                          {t("adminUsage.addModelPrice")}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
-function UserUsageTable({
+function UserUsageList({
   loading,
   items,
   error,
@@ -525,111 +707,171 @@ function UserUsageTable({
   usdFmt: Intl.NumberFormat
 }) {
   const { t } = useTranslation()
+  const totalCost = items.reduce((sum, item) => sum + userCostValue(item), 0)
+  const totalRequests = items.reduce(
+    (sum, item) => sum + (item.request_count ?? 0),
+    0
+  )
+  const rankByCost = totalCost > 0
+  const ranked = [...items].sort((a, b) =>
+    rankByCost
+      ? userCostValue(b) - userCostValue(a)
+      : (b.request_count ?? 0) - (a.request_count ?? 0)
+  )
 
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <Table className="min-w-[1100px]">
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("adminUsage.user")}</TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.requests")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.failures")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.failureRate")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.totalTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.inputTokens")}
-            </TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.outputTokens")}
-            </TableHead>
-            <TableHead className="text-right">{t("adminUsage.cost")}</TableHead>
-            <TableHead className="text-right">
-              {t("adminUsage.unpricedTokens")}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {loading ? (
-            <TableRow>
-              <TableCell
-                colSpan={9}
-                className="py-10 text-center text-muted-foreground"
-              >
-                {t("common.loading")}
-              </TableCell>
-            </TableRow>
-          ) : error ? (
-            <TableRow>
-              <TableCell
-                colSpan={9}
-                className="py-10 text-center text-destructive"
-              >
-                {error}
-              </TableCell>
-            </TableRow>
-          ) : items.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={9}
-                className="py-10 text-center text-muted-foreground"
-              >
-                {t("adminUsage.noUsers")}
-              </TableCell>
-            </TableRow>
-          ) : (
-            items.map((item) => (
-              <TableRow key={item.user_id}>
-                <TableCell>
-                  <div className="flex flex-col">
-                    <span className="truncate font-medium">
-                      {item.user_name || item.user_email}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {item.user_email}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.request_count, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.failed_count, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatFailureRate(
-                    item.request_count,
-                    item.failed_count,
-                    percentFmt
-                  )}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.total_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.input_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.output_tokens, numberFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatUSD(item.cost_usd, usdFmt)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {formatNumber(item.unpriced_tokens, numberFmt)}
-                </TableCell>
-              </TableRow>
-            ))
+    <Card className="py-0">
+      <CardContent className="px-0">
+        <div className="border-b px-5 py-4">
+          <div className="min-w-0">
+            <h2 className="text-base font-medium">
+              {t("adminUsage.userDistribution")}
+            </h2>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            {t("common.loading")}
+          </div>
+        ) : error ? (
+          <div className="py-10 text-center text-sm text-destructive">
+            {error}
+          </div>
+        ) : ranked.length === 0 ? (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            {t("adminUsage.noUsers")}
+          </div>
+        ) : (
+          <div className="divide-y">
+            {ranked.map((item) => {
+              const value = rankByCost
+                ? userCostValue(item)
+                : item.request_count
+              const total = rankByCost ? totalCost : totalRequests
+              return (
+                <UserUsageRow
+                  key={item.user_id}
+                  item={item}
+                  primaryValue={
+                    rankByCost
+                      ? formatUSD(item.cost_usd, usdFmt)
+                      : formatNumber(item.request_count, numberFmt)
+                  }
+                  primaryLabel={
+                    rankByCost ? t("adminUsage.cost") : t("adminUsage.requests")
+                  }
+                  share={distributionShareLabel(value, total, percentFmt)}
+                  percent={distributionPercent(value, total)}
+                  numberFmt={numberFmt}
+                  percentFmt={percentFmt}
+                />
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function UserUsageRow({
+  item,
+  primaryLabel,
+  primaryValue,
+  share,
+  percent,
+  numberFmt,
+  percentFmt,
+}: {
+  item: UserUsage
+  primaryLabel: string
+  primaryValue: string
+  share: string
+  percent: number
+  numberFmt: Intl.NumberFormat
+  percentFmt: Intl.NumberFormat
+}) {
+  const { t } = useTranslation()
+  const failureRate = failureRateValue(item.request_count, item.failed_count)
+  const hasUnpricedTokens = (item.unpriced_tokens ?? 0) > 0
+  const hasDisplayName =
+    item.user_name &&
+    item.user_name.trim() &&
+    item.user_name !== item.user_email
+
+  return (
+    <div className="grid gap-4 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(220px,280px)] lg:items-center">
+      <div className="min-w-0">
+        <div className="flex min-w-0 flex-col">
+          <span className="truncate font-medium">
+            {hasDisplayName ? item.user_name : item.user_email}
+          </span>
+          {hasDisplayName && (
+            <span className="truncate text-xs text-muted-foreground">
+              {item.user_email}
+            </span>
           )}
-        </TableBody>
-      </Table>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span>
+            {t("adminUsage.requests")}:{" "}
+            <span className="tabular-nums">
+              {formatNumber(item.request_count, numberFmt)}
+            </span>
+          </span>
+          <span>
+            {t("adminUsage.failureRate")}:{" "}
+            <span
+              className={cn(
+                "tabular-nums",
+                failureRate >= 0.05
+                  ? "text-destructive"
+                  : failureRate >= 0.01
+                    ? "text-amber-700 dark:text-amber-300"
+                    : undefined
+              )}
+            >
+              {formatFailureRate(
+                item.request_count,
+                item.failed_count,
+                percentFmt
+              )}
+            </span>
+          </span>
+          <span>
+            {t("adminUsage.totalTokens")}:{" "}
+            <span className="tabular-nums">
+              {formatNumber(item.total_tokens, numberFmt)}
+            </span>
+          </span>
+          {hasUnpricedTokens && (
+            <Badge variant="outline">
+              {t("adminUsage.unpricedTokensDetail", {
+                count: formatNumber(item.unpriced_tokens, numberFmt),
+              })}
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      <div className="grid gap-2 lg:text-right">
+        <div>
+          <div className="text-xs text-muted-foreground">{primaryLabel}</div>
+          <div className="mt-1 text-xl font-semibold tabular-nums">
+            {primaryValue}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {share}
+            </span>
+          </div>
+        </div>
+        <Progress
+          value={percent}
+          className="h-2"
+          indicatorClassName={hasUnpricedTokens ? "bg-amber-500" : "bg-primary"}
+        />
+      </div>
     </div>
   )
 }

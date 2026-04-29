@@ -20,6 +20,7 @@ import {
   type MessagePart,
 } from "@/lib/chats-client"
 import i18n from "@/lib/i18n"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
   ChatContainerContent,
@@ -603,9 +604,9 @@ export function ChatPanel({
           )}
           {visibleError && (
             <Message className="items-start">
-              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {visibleError}
-              </div>
+              <Alert variant="destructive">
+                <AlertDescription>{visibleError}</AlertDescription>
+              </Alert>
             </Message>
           )}
           <ChatContainerScrollAnchor />
@@ -636,17 +637,19 @@ export function ChatPanel({
                       alt={attachment.name}
                       className="h-full w-full object-cover"
                     />
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
+                      size="icon-xs"
                       aria-label={t("chat.removeImage")}
                       onClick={(event) => {
                         event.stopPropagation()
                         removeAttachment(attachment.url)
                       }}
-                      className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-background/85 text-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      className="absolute top-1 right-1 rounded-full opacity-0 shadow-sm transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                     >
                       <X className="size-3" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
                 {uploading && (
@@ -735,9 +738,9 @@ export function ChatPanel({
             </PromptInputActions>
           </PromptInput>
           {uploadError && (
-            <p className="mt-2 text-center text-xs text-destructive">
-              {uploadError}
-            </p>
+            <Alert variant="destructive" className="mt-2">
+              <AlertDescription>{uploadError}</AlertDescription>
+            </Alert>
           )}
           <p className="mt-2 text-center text-xs text-muted-foreground">
             {t("chat.disclaimer")}

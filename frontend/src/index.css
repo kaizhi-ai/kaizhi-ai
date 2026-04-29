@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+@plugin "@tailwindcss/typography";
+
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 @theme inline {
@@ -68,7 +70,7 @@
   color-scheme: light;
   --background: oklch(0.98 0.003 106.45);
   --foreground: oklch(0.34 0.03 95.72);
-  --card: oklch(0.98 0.003 106.45);
+  --card: var(--popover);
   --card-foreground: oklch(0.19 0 106.59);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.27 0.02 98.94);
@@ -120,7 +122,7 @@
     color-scheme: dark;
     --background: oklch(0.24 0.002 106.55);
     --foreground: oklch(0.81 0.01 93.01);
-    --card: oklch(0.24 0.002 106.55);
+    --card: var(--popover);
     --card-foreground: oklch(0.98 0.01 95.1);
     --popover: oklch(0.29 0.004 106.64);
     --popover-foreground: oklch(0.92 0 106.48);

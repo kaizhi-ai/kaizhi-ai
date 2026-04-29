@@ -43,7 +43,7 @@ Tests use Go's standard `testing` package plus `httptest`, colocated with the pa
 
 Go: standard formatting via `go fmt ./...`. Use short, package-oriented names (`users`, `apikeys`, `usage`, `postgres`, `provider`, `xrayproxy`). Keep HTTP handlers, stores, services, and providers in their owning package. Avoid mixing API key, usage, or provider logic back into `users`.
 
-Frontend: TypeScript + React 19 with Prettier (`pnpm format`) and ESLint (`pnpm lint`). UI components live under `src/components/ui` (Radix/Base UI primitives); feature components are colocated by area (`chat`, `settings`, `admin`).
+Frontend: TypeScript + React 19 with Prettier (`pnpm format`) and ESLint (`pnpm lint`). Prefer shadcn/ui components for frontend UI before introducing custom primitives. UI components live under `src/components/ui` (Radix/Base UI primitives); feature components are colocated by area (`chat`, `settings`, `admin`).
 
 ## Commit & Pull Request Guidelines
 

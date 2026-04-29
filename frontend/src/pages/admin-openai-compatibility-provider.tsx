@@ -18,6 +18,7 @@ import {
   proxySummaryKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,8 +44,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Field,
+  FieldDescription,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import {
   Table,
@@ -209,7 +216,7 @@ export default function AdminOpenAICompatibilityProviderPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">
@@ -230,9 +237,9 @@ export default function AdminOpenAICompatibilityProviderPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       <div className="overflow-hidden rounded-lg border">
@@ -534,44 +541,42 @@ function OpenAICompatibilityProviderForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {!isEdit && (
-        <p className="text-sm text-muted-foreground">
+        <FieldDescription>
           {t("provider.openAICompatibilityFormHelp")}
-        </p>
+        </FieldDescription>
       )}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="openai-compat-name">{t("common.name")}</Label>
+      <Field>
+        <FieldLabel htmlFor="openai-compat-name">{t("common.name")}</FieldLabel>
         <Input
           id="openai-compat-name"
           required
           placeholder="openrouter"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="h-9"
         />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="openai-compat-base-url">Base URL</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor="openai-compat-base-url">Base URL</FieldLabel>
         <Input
           id="openai-compat-base-url"
           required
           placeholder={DEFAULT_BASE_URL}
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          className="h-9"
         />
-      </div>
-      <div className="flex flex-col gap-2">
-        <Label>API Keys</Label>
+      </Field>
+      <FieldSet>
+        <FieldLegend variant="label">API Keys</FieldLegend>
         <div className="flex flex-col gap-2">
           {apiKeyEntries.map((entry, index) => (
             <div
               key={entry.localId}
               className="grid gap-2 rounded-md border p-3 md:grid-cols-[minmax(0,1fr)_96px_auto]"
             >
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor={`${entry.localId}-key`}>
+              <Field className="min-w-0">
+                <FieldLabel htmlFor={`${entry.localId}-key`}>
                   {t("provider.apiKeyLabel", { index: index + 1 })}
-                </Label>
+                </FieldLabel>
                 <div className="flex min-w-0 gap-2">
                   <Input
                     id={`${entry.localId}-key`}
@@ -584,13 +589,13 @@ function OpenAICompatibilityProviderForm({
                         apiKey: event.target.value,
                       })
                     }
-                    className="h-9 min-w-0 flex-1 font-mono text-xs"
+                    className="min-w-0 flex-1 font-mono text-xs"
                   />
                   <Button
                     type="button"
                     variant="outline"
                     size="icon"
-                    className="h-9 w-9 shrink-0"
+                    className="shrink-0"
                     aria-label={
                       entry.showKey ? t("common.hide") : t("common.show")
                     }
@@ -603,11 +608,11 @@ function OpenAICompatibilityProviderForm({
                     {entry.showKey ? <EyeOff /> : <Eye />}
                   </Button>
                 </div>
-              </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor={`${entry.localId}-proxy`}>
+              </Field>
+              <Field className="min-w-0">
+                <FieldLabel htmlFor={`${entry.localId}-proxy`}>
                   {t("common.proxy")}
-                </Label>
+                </FieldLabel>
                 <div className="flex h-9 items-center gap-2">
                   <Switch
                     id={`${entry.localId}-proxy`}
@@ -627,7 +632,7 @@ function OpenAICompatibilityProviderForm({
                       : t("proxy.direct")}
                   </span>
                 </div>
-              </div>
+              </Field>
               <Button
                 type="button"
                 variant="ghost"
@@ -652,14 +657,10 @@ function OpenAICompatibilityProviderForm({
           <Plus />
           {t("provider.addAPIKey")}
         </Button>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label>
-          {t("provider.models")}{" "}
-          <span className="text-muted-foreground">
-            {t("provider.modelsRequiredHint")}
-          </span>
-        </Label>
+      </FieldSet>
+      <Field>
+        <FieldLabel>{t("provider.models")}</FieldLabel>
+        <FieldDescription>{t("provider.modelsRequiredHint")}</FieldDescription>
         <ModelRowsEditor
           rows={models}
           onChange={setModels}
@@ -675,8 +676,12 @@ function OpenAICompatibilityProviderForm({
             </Button>
           }
         />
-      </div>
-      {error && <p className="text-sm break-all text-destructive">{error}</p>}
+      </Field>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

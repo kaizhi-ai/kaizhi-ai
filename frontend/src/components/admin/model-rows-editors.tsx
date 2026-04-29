@@ -54,13 +54,13 @@ export function ModelRowsEditor({
             placeholder={t("provider.upstreamName")}
             value={row.name}
             onChange={(event) => updateName(index, event.target.value)}
-            className="h-9 flex-1 font-mono text-xs"
+            className="flex-1 font-mono text-xs"
           />
           <Input
             placeholder={t("provider.modelAliasPlaceholder")}
             value={row.alias}
             onChange={(event) => update(index, { alias: event.target.value })}
-            className="h-9 flex-1 font-mono text-xs"
+            className="flex-1 font-mono text-xs"
           />
           <Button
             type="button"
@@ -119,7 +119,7 @@ export function ExcludedRowsEditor({
             placeholder={t("provider.modelExcludedPlaceholder")}
             value={value}
             onChange={(event) => update(index, event.target.value)}
-            className="h-9 flex-1 font-mono text-xs"
+            className="flex-1 font-mono text-xs"
           />
           <Button
             type="button"

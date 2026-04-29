@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react"
+import type { ColumnDef, FilterFn } from "@tanstack/react-table"
 import { MoreHorizontal, Plus, Sparkles } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
@@ -15,6 +22,7 @@ import {
 } from "@/lib/admin-users-client"
 import { useAuth } from "@/lib/auth-context"
 import { languageOptions, supportedLanguage } from "@/lib/i18n"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +34,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { DataTable, DataTableSortableHeader } from "@/components/ui/data-table"
 import {
   Dialog,
   DialogContent,
@@ -41,8 +50,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -50,14 +59,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 function generatePassword(length = 16) {
@@ -100,6 +101,12 @@ function formatQuota(
 function quotaPayload(value: string): string | null {
   const trimmed = value.trim()
   return trimmed === "" ? null : trimmed
+}
+
+function usageSortValue(value: string | undefined): number {
+  if (!value) return 0
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
 }
 
 function displayName(user: AdminUser) {
@@ -226,6 +233,40 @@ export default function AdminUsersPage() {
     [users]
   )
   const filteredUsers = filter === "banned" ? bannedUsers : activeUsers
+  const userGlobalFilter = useCallback<FilterFn<AdminUser>>(
+    (row, _columnId, filterValue) => {
+      const query = String(filterValue ?? "")
+        .trim()
+        .toLowerCase()
+      if (!query) return true
+
+      const item = row.original
+      const role = roleValue(item)
+      const roleLabel =
+        role === "admin" ? t("adminUsers.roleAdmin") : t("adminUsers.roleUser")
+      const statusLabel = isBannedUser(item)
+        ? t("adminUsers.banned")
+        : t("adminUsers.normal")
+
+      return [
+        item.name,
+        item.email,
+        item.language,
+        role,
+        roleLabel,
+        statusLabel,
+        item.usage_5h_cost_usd,
+        item.usage_7d_cost_usd,
+        item.quota_5h_cost_usd,
+        item.quota_7d_cost_usd,
+      ].some((value) =>
+        String(value ?? "")
+          .toLowerCase()
+          .includes(query)
+      )
+    },
+    [t]
+  )
 
   function resetCreateForm() {
     setEmail("")
@@ -262,7 +303,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  function openEdit(target: AdminUser) {
+  const openEdit = useCallback((target: AdminUser) => {
     setEditTarget(target)
     setEditEmail(target.email)
     setEditName(target.name ?? "")
@@ -271,7 +312,7 @@ export default function AdminUsersPage() {
     setEditQuota5H(target.quota_5h_cost_usd ?? "")
     setEditQuota7D(target.quota_7d_cost_usd ?? "")
     setEditError(null)
-  }
+  }, [])
 
   async function handleEdit(e: FormEvent) {
     e.preventDefault()
@@ -319,13 +360,13 @@ export default function AdminUsersPage() {
     }
   }
 
-  function openResetPassword(target: AdminUser) {
+  const openResetPassword = useCallback((target: AdminUser) => {
     setPwdTarget(target)
     setPwdValue(generatePassword())
     setPwdError(null)
     setPwdDone(false)
     setPwdCopied(false)
-  }
+  }, [])
 
   async function handleResetPassword(e: FormEvent) {
     e.preventDefault()
@@ -367,27 +408,246 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleUnban(target: AdminUser) {
-    setUnbanError(null)
-    setUnbanningId(target.id)
-    try {
-      const updated = await unbanAdminUser(target.id)
-      setUsers((prev) => upsertUser(prev, updated))
-    } catch (err) {
-      setUnbanError(errorMessage(err, t("adminUsers.unbanFailed")))
-    } finally {
-      setUnbanningId(null)
-    }
-  }
+  const handleUnban = useCallback(
+    async (target: AdminUser) => {
+      setUnbanError(null)
+      setUnbanningId(target.id)
+      try {
+        const updated = await unbanAdminUser(target.id)
+        setUsers((prev) => upsertUser(prev, updated))
+      } catch (err) {
+        setUnbanError(errorMessage(err, t("adminUsers.unbanFailed")))
+      } finally {
+        setUnbanningId(null)
+      }
+    },
+    [t]
+  )
+
+  const requestBan = useCallback((target: AdminUser) => {
+    setBanError(null)
+    setBanTarget(target)
+  }, [])
+
+  const columns = useMemo<ColumnDef<AdminUser>[]>(
+    () => [
+      {
+        id: "name",
+        accessorFn: (row) => row.name?.trim() ?? "",
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("adminUsers.user")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="font-medium">{displayName(row.original)}</span>
+        ),
+        meta: { headClassName: "min-w-32", label: t("adminUsers.user") },
+      },
+      {
+        id: "email",
+        accessorKey: "email",
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("adminUsers.email")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">{row.original.email}</span>
+        ),
+        meta: { headClassName: "min-w-56", label: t("adminUsers.email") },
+      },
+      {
+        id: "role",
+        accessorFn: (row) => roleValue(row),
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("adminUsers.role")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {roleValue(row.original) === "admin"
+              ? t("adminUsers.roleAdmin")
+              : t("adminUsers.roleUser")}
+          </span>
+        ),
+        meta: { headClassName: "min-w-20", label: t("adminUsers.role") },
+      },
+      {
+        id: "usage5h",
+        accessorFn: (row) => usageSortValue(row.usage_5h_cost_usd),
+        sortingFn: "basic",
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            align="right"
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("adminUsers.usage5hQuota")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            <span>{formatUSD(row.original.usage_5h_cost_usd, usdFmt)}</span>
+            <span className="text-xs text-muted-foreground">
+              {" / "}
+              {formatQuota(
+                row.original.quota_5h_cost_usd,
+                usdFmt,
+                t("adminUsers.unlimitedQuota")
+              )}
+            </span>
+          </span>
+        ),
+        meta: {
+          headClassName: "min-w-44",
+          align: "right",
+          label: t("adminUsers.usage5hQuota"),
+        },
+      },
+      {
+        id: "usage7d",
+        accessorFn: (row) => usageSortValue(row.usage_7d_cost_usd),
+        sortingFn: "basic",
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            align="right"
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("adminUsers.usage7dQuota")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            <span>{formatUSD(row.original.usage_7d_cost_usd, usdFmt)}</span>
+            <span className="text-xs text-muted-foreground">
+              {" / "}
+              {formatQuota(
+                row.original.quota_7d_cost_usd,
+                usdFmt,
+                t("adminUsers.unlimitedQuota")
+              )}
+            </span>
+          </span>
+        ),
+        meta: {
+          headClassName: "min-w-44",
+          align: "right",
+          label: t("adminUsers.usage7dQuota"),
+        },
+      },
+      {
+        id: "createdAt",
+        accessorKey: "created_at",
+        header: ({ column }) => (
+          <DataTableSortableHeader
+            isSorted={column.getIsSorted()}
+            onToggle={() =>
+              column.toggleSorting(column.getIsSorted() === "asc")
+            }
+          >
+            {t("common.createdAt")}
+          </DataTableSortableHeader>
+        ),
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {formatDate(row.original.created_at, dateFmt)}
+          </span>
+        ),
+        meta: { headClassName: "min-w-40", label: t("common.createdAt") },
+      },
+      {
+        id: "actions",
+        enableSorting: false,
+        enableHiding: false,
+        header: () => null,
+        cell: ({ row }) => {
+          const item = row.original
+          const isSelf = currentUserId === item.id
+          const isBanned = isBannedUser(item)
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t("common.moreActions")}
+                  />
+                }
+              >
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => openEdit(item)}>
+                  {t("common.edit")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openResetPassword(item)}>
+                  {t("adminUsers.resetPassword")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {isBanned ? (
+                  <DropdownMenuItem
+                    disabled={isSelf || unbanningId === item.id}
+                    onClick={() => void handleUnban(item)}
+                  >
+                    {t("adminUsers.unban")}
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    disabled={isSelf}
+                    onClick={() => requestBan(item)}
+                  >
+                    {t("adminUsers.banUser")}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        },
+        meta: { headClassName: "w-12" },
+      },
+    ],
+    [
+      t,
+      dateFmt,
+      usdFmt,
+      currentUserId,
+      unbanningId,
+      openEdit,
+      openResetPassword,
+      handleUnban,
+      requestBan,
+    ]
+  )
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">{t("adminUsers.title")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t("adminUsers.totalUsers", { count: users.length })}
-          </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Tabs
@@ -426,10 +686,10 @@ export default function AdminUsersPage() {
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5 sm:col-span-2">
-                    <Label htmlFor="admin-user-email">
+                  <Field className="sm:col-span-2">
+                    <FieldLabel htmlFor="admin-user-email">
                       {t("adminUsers.email")}
-                    </Label>
+                    </FieldLabel>
                     <Input
                       id="admin-user-email"
                       type="email"
@@ -437,26 +697,24 @@ export default function AdminUsersPage() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="h-9"
                     />
-                  </div>
-                  <div className="flex flex-col gap-1.5 sm:col-span-2">
-                    <Label htmlFor="admin-user-name">
+                  </Field>
+                  <Field className="sm:col-span-2">
+                    <FieldLabel htmlFor="admin-user-name">
                       {t("settings.name")}
-                    </Label>
+                    </FieldLabel>
                     <Input
                       id="admin-user-name"
                       autoComplete="off"
                       maxLength={80}
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="h-9"
                     />
-                  </div>
-                  <div className="flex flex-col gap-1.5 sm:col-span-2">
-                    <Label htmlFor="admin-user-password">
+                  </Field>
+                  <Field className="sm:col-span-2">
+                    <FieldLabel htmlFor="admin-user-password">
                       {t("common.password")}
-                    </Label>
+                    </FieldLabel>
                     <div className="flex gap-2">
                       <Input
                         id="admin-user-password"
@@ -466,26 +724,26 @@ export default function AdminUsersPage() {
                         required
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="h-9 min-w-0 flex-1 font-mono"
+                        className="min-w-0 flex-1 font-mono"
                       />
                       <Button
                         type="button"
                         variant="outline"
-                        className="h-9 shrink-0"
+                        className="shrink-0"
                         onClick={() => setPassword(generatePassword())}
                       >
                         <Sparkles />
                         {t("adminUsers.randomPassword")}
                       </Button>
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <FieldDescription className="text-xs">
                       {t("adminUsers.minPassword")}
-                    </p>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-role">
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="admin-user-role">
                       {t("adminUsers.role")}
-                    </Label>
+                    </FieldLabel>
                     <Select
                       value={role}
                       onValueChange={(value) => {
@@ -505,11 +763,11 @@ export default function AdminUsersPage() {
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-language">
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="admin-user-language">
                       {t("settings.language")}
-                    </Label>
+                    </FieldLabel>
                     <Select
                       value={language}
                       onValueChange={(value) => {
@@ -533,11 +791,11 @@ export default function AdminUsersPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-quota-5h">
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="admin-user-quota-5h">
                       {t("adminUsers.quota5h")}
-                    </Label>
+                    </FieldLabel>
                     <Input
                       id="admin-user-quota-5h"
                       type="text"
@@ -546,13 +804,12 @@ export default function AdminUsersPage() {
                       placeholder={t("adminUsers.unlimitedQuota")}
                       value={quota5H}
                       onChange={(e) => setQuota5H(e.target.value)}
-                      className="h-9"
                     />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="admin-user-quota-7d">
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="admin-user-quota-7d">
                       {t("adminUsers.quota7d")}
-                    </Label>
+                    </FieldLabel>
                     <Input
                       id="admin-user-quota-7d"
                       type="text"
@@ -561,13 +818,12 @@ export default function AdminUsersPage() {
                       placeholder={t("adminUsers.unlimitedQuota")}
                       value={quota7D}
                       onChange={(e) => setQuota7D(e.target.value)}
-                      className="h-9"
                     />
-                  </div>
+                  </Field>
                   {createError && (
-                    <p className="text-sm text-destructive sm:col-span-2">
-                      {createError}
-                    </p>
+                    <Alert variant="destructive" className="sm:col-span-2">
+                      <AlertDescription>{createError}</AlertDescription>
+                    </Alert>
                   )}
                 </div>
                 <DialogFooter>
@@ -592,155 +848,33 @@ export default function AdminUsersPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
       {unbanError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {unbanError}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{unbanError}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="rounded-lg border">
-        <Table className="min-w-5xl table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-32">{t("adminUsers.user")}</TableHead>
-              <TableHead className="w-72">{t("adminUsers.email")}</TableHead>
-              <TableHead className="w-20">{t("adminUsers.role")}</TableHead>
-              <TableHead className="w-40 text-right">
-                {t("adminUsers.usage5hQuota")}
-              </TableHead>
-              <TableHead className="w-40 text-right">
-                {t("adminUsers.usage7dQuota")}
-              </TableHead>
-              <TableHead className="w-40">{t("common.createdAt")}</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading && (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-10 text-center text-muted-foreground"
-                >
-                  {t("common.loading")}
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading &&
-              filteredUsers.map((item) => {
-                const isSelf = currentUserId === item.id
-                const isBanned = isBannedUser(item)
-                return (
-                  <TableRow key={item.id}>
-                    <TableCell className="truncate font-medium">
-                      {displayName(item)}
-                    </TableCell>
-                    <TableCell className="truncate">{item.email}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {roleValue(item) === "admin"
-                        ? t("adminUsers.roleAdmin")
-                        : t("adminUsers.roleUser")}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <div className="flex flex-col items-end leading-tight">
-                        <span className="text-muted-foreground">
-                          {formatUSD(item.usage_5h_cost_usd, usdFmt)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          /{" "}
-                          {formatQuota(
-                            item.quota_5h_cost_usd,
-                            usdFmt,
-                            t("adminUsers.unlimitedQuota")
-                          )}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <div className="flex flex-col items-end leading-tight">
-                        <span className="text-muted-foreground">
-                          {formatUSD(item.usage_7d_cost_usd, usdFmt)}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          /{" "}
-                          {formatQuota(
-                            item.quota_7d_cost_usd,
-                            usdFmt,
-                            t("adminUsers.unlimitedQuota")
-                          )}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(item.created_at, dateFmt)}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={t("common.moreActions")}
-                            />
-                          }
-                        >
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(item)}>
-                            {t("common.edit")}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => openResetPassword(item)}
-                          >
-                            {t("adminUsers.resetPassword")}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          {isBanned ? (
-                            <DropdownMenuItem
-                              disabled={isSelf || unbanningId === item.id}
-                              onClick={() => void handleUnban(item)}
-                            >
-                              {t("adminUsers.unban")}
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem
-                              variant="destructive"
-                              disabled={isSelf}
-                              onClick={() => {
-                                setBanError(null)
-                                setBanTarget(item)
-                              }}
-                            >
-                              {t("adminUsers.banUser")}
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            {!loading && filteredUsers.length === 0 && (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-12 text-center text-muted-foreground"
-                >
-                  {filter === "banned"
-                    ? t("adminUsers.noBannedUsers")
-                    : t("adminUsers.noActiveUsers")}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <DataTable
+        columns={columns}
+        data={filteredUsers}
+        loading={loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={
+          filter === "banned"
+            ? t("adminUsers.noBannedUsers")
+            : t("adminUsers.noActiveUsers")
+        }
+        noResultsLabel={t("adminUsers.noSearchResults")}
+        searchPlaceholder={t("adminUsers.searchPlaceholder")}
+        searchAriaLabel={t("adminUsers.searchAriaLabel")}
+        getRowId={(row) => row.id}
+        initialSorting={[{ id: "createdAt", desc: true }]}
+        tableOptions={{ globalFilterFn: userGlobalFilter }}
+      />
 
       <Dialog
         open={editTarget !== null}
@@ -757,10 +891,10 @@ export default function AdminUsersPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="edit-admin-user-email">
+              <Field className="sm:col-span-2">
+                <FieldLabel htmlFor="edit-admin-user-email">
                   {t("adminUsers.email")}
-                </Label>
+                </FieldLabel>
                 <Input
                   id="edit-admin-user-email"
                   type="email"
@@ -768,26 +902,24 @@ export default function AdminUsersPage() {
                   required
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
-                  className="h-9"
                 />
-              </div>
-              <div className="flex flex-col gap-1.5 sm:col-span-2">
-                <Label htmlFor="edit-admin-user-name">
+              </Field>
+              <Field className="sm:col-span-2">
+                <FieldLabel htmlFor="edit-admin-user-name">
                   {t("settings.name")}
-                </Label>
+                </FieldLabel>
                 <Input
                   id="edit-admin-user-name"
                   autoComplete="off"
                   maxLength={80}
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="h-9"
                 />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-language">
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="edit-admin-user-language">
                   {t("settings.language")}
-                </Label>
+                </FieldLabel>
                 <Select
                   value={editLanguage}
                   onValueChange={(value) => {
@@ -809,11 +941,11 @@ export default function AdminUsersPage() {
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-role">
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="edit-admin-user-role">
                   {t("adminUsers.role")}
-                </Label>
+                </FieldLabel>
                 <Select
                   value={editRole}
                   onValueChange={(value) => {
@@ -835,15 +967,15 @@ export default function AdminUsersPage() {
                   </SelectContent>
                 </Select>
                 {editTarget?.id === currentUserId && (
-                  <p className="text-xs text-muted-foreground">
+                  <FieldDescription className="text-xs">
                     {t("adminUsers.cannotEditOwnRole")}
-                  </p>
+                  </FieldDescription>
                 )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-quota-5h">
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="edit-admin-user-quota-5h">
                   {t("adminUsers.quota5h")}
-                </Label>
+                </FieldLabel>
                 <Input
                   id="edit-admin-user-quota-5h"
                   type="text"
@@ -852,13 +984,12 @@ export default function AdminUsersPage() {
                   placeholder={t("adminUsers.unlimitedQuota")}
                   value={editQuota5H}
                   onChange={(e) => setEditQuota5H(e.target.value)}
-                  className="h-9"
                 />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="edit-admin-user-quota-7d">
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="edit-admin-user-quota-7d">
                   {t("adminUsers.quota7d")}
-                </Label>
+                </FieldLabel>
                 <Input
                   id="edit-admin-user-quota-7d"
                   type="text"
@@ -867,13 +998,12 @@ export default function AdminUsersPage() {
                   placeholder={t("adminUsers.unlimitedQuota")}
                   value={editQuota7D}
                   onChange={(e) => setEditQuota7D(e.target.value)}
-                  className="h-9"
                 />
-              </div>
+              </Field>
               {editError && (
-                <p className="text-sm text-destructive sm:col-span-2">
-                  {editError}
-                </p>
+                <Alert variant="destructive" className="sm:col-span-2">
+                  <AlertDescription>{editError}</AlertDescription>
+                </Alert>
               )}
             </div>
             <DialogFooter>
@@ -913,13 +1043,16 @@ export default function AdminUsersPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-3">
-                <div className="rounded-md bg-muted p-3 font-mono text-sm break-all select-all">
-                  {pwdValue}
-                </div>
+                <Input
+                  readOnly
+                  value={pwdValue}
+                  className="font-mono"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-9 w-fit"
+                  className="w-fit"
                   onClick={copyPassword}
                 >
                   {pwdCopied ? t("common.copied") : t("common.copy")}
@@ -950,10 +1083,10 @@ export default function AdminUsersPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="reset-admin-user-password">
+                <Field>
+                  <FieldLabel htmlFor="reset-admin-user-password">
                     {t("adminUsers.newPassword")}
-                  </Label>
+                  </FieldLabel>
                   <div className="flex gap-2">
                     <Input
                       id="reset-admin-user-password"
@@ -963,24 +1096,26 @@ export default function AdminUsersPage() {
                       required
                       value={pwdValue}
                       onChange={(e) => setPwdValue(e.target.value)}
-                      className="h-9 min-w-0 flex-1 font-mono"
+                      className="min-w-0 flex-1 font-mono"
                     />
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-9 shrink-0"
+                      className="shrink-0"
                       onClick={() => setPwdValue(generatePassword())}
                     >
                       <Sparkles />
                       {t("adminUsers.randomPassword")}
                     </Button>
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <FieldDescription className="text-xs">
                     {t("adminUsers.minPassword")}
-                  </p>
-                </div>
+                  </FieldDescription>
+                </Field>
                 {pwdError && (
-                  <p className="text-sm text-destructive">{pwdError}</p>
+                  <Alert variant="destructive">
+                    <AlertDescription>{pwdError}</AlertDescription>
+                  </Alert>
                 )}
               </div>
               <DialogFooter>
@@ -1026,7 +1161,9 @@ export default function AdminUsersPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           {banError && (
-            <p className="px-4 text-sm text-destructive">{banError}</p>
+            <Alert variant="destructive">
+              <AlertDescription>{banError}</AlertDescription>
+            </Alert>
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={banSubmitting}>

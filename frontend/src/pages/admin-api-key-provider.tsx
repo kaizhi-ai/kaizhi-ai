@@ -18,6 +18,7 @@ import {
   proxyStatusKey,
   proxyURLFromEnabled,
 } from "@/lib/proxy-mode"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,8 +44,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -181,7 +182,7 @@ export default function AdminAPIKeyProviderPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-xl font-semibold">API Key Provider</h1>
@@ -200,9 +201,9 @@ export default function AdminAPIKeyProviderPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       <div className="overflow-hidden rounded-lg border">
@@ -308,8 +309,10 @@ export default function AdminAPIKeyProviderPage() {
               {t("provider.selectTypeCredentials")}
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="api-key-provider-kind">{t("common.type")}</Label>
+          <Field>
+            <FieldLabel htmlFor="api-key-provider-kind">
+              {t("common.type")}
+            </FieldLabel>
             <Select
               value={addKind}
               onValueChange={(value) => setAddKind(value as ProviderAPIKeyKind)}
@@ -325,7 +328,7 @@ export default function AdminAPIKeyProviderPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </Field>
           <ProviderKeyForm
             key={addKind}
             kind={addKind}
@@ -488,13 +491,9 @@ function ProviderKeyForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      {!isEdit && (
-        <p className="text-sm text-muted-foreground">
-          {t(meta.descriptionKey)}
-        </p>
-      )}
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`provider-key-${kind}`}>API Key</Label>
+      {!isEdit && <FieldDescription>{t(meta.descriptionKey)}</FieldDescription>}
+      <Field>
+        <FieldLabel htmlFor={`provider-key-${kind}`}>API Key</FieldLabel>
         <div className="flex gap-2">
           <Input
             id={`provider-key-${kind}`}
@@ -504,43 +503,37 @@ function ProviderKeyForm({
             placeholder={isEdit ? t("provider.keyUnchangedPlaceholder") : ""}
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            className="h-9 flex-1 font-mono"
+            className="flex-1 font-mono"
           />
           <Button
             type="button"
             variant="outline"
             size="icon"
-            className="h-9 w-9"
             aria-label={showKey ? t("common.hide") : t("common.show")}
             onClick={() => setShowKey((value) => !value)}
           >
             {showKey ? <EyeOff /> : <Eye />}
           </Button>
         </div>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`provider-base-url-${kind}`}>Base URL</Label>
+      </Field>
+      <Field>
+        <FieldLabel htmlFor={`provider-base-url-${kind}`}>Base URL</FieldLabel>
         <Input
           id={`provider-base-url-${kind}`}
           required
           placeholder={meta.defaultBaseUrl}
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
-          className="h-9"
         />
-      </div>
+      </Field>
       <ProxySwitchField
         id={`provider-proxy-${kind}`}
         checked={proxyEnabled}
         onCheckedChange={setProxyEnabled}
       />
-      <div className="flex flex-col gap-1.5">
-        <Label>
-          {t("provider.whitelistModels")}{" "}
-          <span className="text-muted-foreground">
-            {t("provider.whitelistModelsHint")}
-          </span>
-        </Label>
+      <Field>
+        <FieldLabel>{t("provider.whitelistModels")}</FieldLabel>
+        <FieldDescription>{t("provider.whitelistModelsHint")}</FieldDescription>
         <ModelRowsEditor
           rows={models}
           onChange={setModels}
@@ -556,20 +549,20 @@ function ProviderKeyForm({
             </Button>
           }
         />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label>
-          {t("provider.excludedModels")}{" "}
-          <span className="text-muted-foreground">
-            {t("provider.excludedModelsHint")}
-          </span>
-        </Label>
+      </Field>
+      <Field>
+        <FieldLabel>{t("provider.excludedModels")}</FieldLabel>
+        <FieldDescription>{t("provider.excludedModelsHint")}</FieldDescription>
         <ExcludedRowsEditor
           rows={excludedModels}
           onChange={setExcludedModels}
         />
-      </div>
-      {error && <p className="text-sm break-all text-destructive">{error}</p>}
+      </Field>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex justify-end">
         <Button type="submit" disabled={submitting}>
           {submitting ? t("common.saving") : t("common.save")}

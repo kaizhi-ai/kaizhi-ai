@@ -17,6 +17,7 @@ import {
   type APIKey,
   type APIKeyExpiry,
 } from "@/lib/api-keys-client"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,8 +43,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Table,
   TableBody,
@@ -163,20 +171,15 @@ export default function SettingsAPIKeysPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
+    <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 pt-10 pb-6 sm:px-6">
       <div className="flex flex-col gap-3">
         <h1 className="text-xl font-semibold">{t("apiKeys.title")}</h1>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {t("apiKeys.description")}
-          </p>
-        </div>
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -435,18 +438,19 @@ function RenameKeyForm({
   const trimmed = name.trim()
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="rename-key-name">{t("common.name")}</Label>
+      <Field data-invalid={!!error}>
+        <FieldLabel htmlFor="rename-key-name">{t("common.name")}</FieldLabel>
         <Input
           id="rename-key-name"
           required
           maxLength={128}
+          aria-invalid={!!error}
           value={name}
           onChange={(event) => setName(event.target.value)}
           autoFocus
         />
-      </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
       <div className="flex justify-end">
         <Button
           type="submit"
@@ -533,19 +537,22 @@ function CreateKeyDialog({
                 : t("apiKeys.createTitle")}
             </DialogTitle>
           </div>
-          <DialogDescription>
-            {createdKey
-              ? t("apiKeys.copyDescriptionCreated")
-              : t("apiKeys.createDescription")}
-          </DialogDescription>
+          {createdKey && (
+            <DialogDescription>
+              {t("apiKeys.copyDescriptionCreated")}
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         {createdKey ? (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-2 rounded-md border bg-muted p-3">
-              <code className="min-w-0 flex-1 font-mono text-xs break-all">
-                {createdKey}
-              </code>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={createdKey}
+                className="font-mono text-xs"
+                onFocus={(event) => event.currentTarget.select()}
+              />
               <Button
                 type="button"
                 variant="outline"
@@ -556,7 +563,11 @@ function CreateKeyDialog({
                 {copied ? t("common.copied") : t("common.copy")}
               </Button>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="flex justify-end">
               <Button type="button" onClick={() => handleOpenChange(false)}>
                 {t("common.complete")}
@@ -565,8 +576,8 @@ function CreateKeyDialog({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="key-name">{t("common.name")}</Label>
+            <Field>
+              <FieldLabel htmlFor="key-name">{t("common.name")}</FieldLabel>
               <Input
                 id="key-name"
                 required
@@ -576,25 +587,34 @@ function CreateKeyDialog({
                 onChange={(event) => setName(event.target.value)}
                 autoFocus
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="key-expiry">{t("apiKeys.expiry")}</Label>
-              <select
-                id="key-expiry"
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="key-expiry">
+                {t("apiKeys.expiry")}
+              </FieldLabel>
+              <Select
                 value={expiresIn}
-                onChange={(event) =>
-                  setExpiresIn(event.target.value as APIKeyExpiry)
+                onValueChange={(value) =>
+                  value && setExpiresIn(value as APIKeyExpiry)
                 }
-                className="h-9 rounded-md border border-input bg-popover px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                {expiryOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {t(`expiry.${option}`)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+                <SelectTrigger id="key-expiry" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {expiryOptions.map((option) => (
+                    <SelectItem key={option} value={option}>
+                      {t(`expiry.${option}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             <div className="flex justify-end">
               <Button type="submit" disabled={submitting || !name.trim()}>
                 {submitting ? t("common.creating") : t("common.create")}

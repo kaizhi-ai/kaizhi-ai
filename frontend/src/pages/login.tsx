@@ -12,8 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 
 type LocationState = { from?: { pathname?: string } } | null
 
@@ -48,36 +53,41 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background px-4 py-10">
-      <Card className="w-full max-w-sm gap-6 bg-popover py-8">
-        <CardHeader className="px-8">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
           <CardTitle className="text-lg">{t("login.title")}</CardTitle>
           <CardDescription>{t("login.description")}</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="flex flex-col gap-4 px-8">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">{t("login.email")}</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">{t("login.password")}</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+          <CardContent className="flex flex-col gap-4">
+            <FieldGroup className="gap-4">
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="email">{t("login.email")}</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </Field>
+              <Field className="gap-1.5" data-invalid={!!error}>
+                <FieldLabel htmlFor="password">
+                  {t("login.password")}
+                </FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  aria-invalid={!!error}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                {error && <FieldError>{error}</FieldError>}
+              </Field>
+            </FieldGroup>
             <Button
               type="submit"
               size="lg"
