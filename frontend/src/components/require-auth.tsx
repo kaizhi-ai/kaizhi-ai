@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 
 import { useAuth } from "@/lib/auth-context"
+import { ChatRuntimeProvider } from "@/lib/chat-runtime"
 
 export default function RequireAuth() {
   const { t } = useTranslation()
@@ -20,5 +21,9 @@ export default function RequireAuth() {
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 
-  return <Outlet />
+  return (
+    <ChatRuntimeProvider>
+      <Outlet />
+    </ChatRuntimeProvider>
+  )
 }

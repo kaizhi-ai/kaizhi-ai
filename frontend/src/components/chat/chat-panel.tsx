@@ -1,11 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import {
-  createOpenAI,
-  type OpenAILanguageModelResponsesOptions,
-} from "@ai-sdk/openai"
-import { useChat } from "@ai-sdk/react"
-import { convertToModelMessages, stepCountIs, streamText } from "ai"
-import type { ChatTransport, UIMessage } from "ai"
+import { useEffect, useRef, useState } from "react"
+import type { UIMessage } from "ai"
 import { ArrowUp, Globe, Paperclip, Plus, Square, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
@@ -17,15 +11,15 @@ import {
   chatMessagesToUIMessages,
   createChat,
   draftTitleFromText,
-  listChatMessages,
   textFromUIMessage,
-  uiMessageToMessageParts,
   uploadChatAttachment,
   type ChatAttachment,
   type ChatMessage,
   type MessagePart,
 } from "@/lib/chats-client"
+import { DRAFT_CHAT_ID, isStreamingStatus } from "@/lib/chat-runtime-context"
 import i18n from "@/lib/i18n"
+import { useRuntimeChat } from "@/lib/use-runtime-chat"
 import { Button } from "@/components/ui/button"
 import {
   ChatContainerContent,
@@ -50,7 +44,6 @@ import {
 import { ScrollButton } from "@/components/ui/scroll-button"
 import { AssistantMessageParts } from "@/components/chat/message-parts"
 
-const CHAT_MODEL = "gpt-5.5"
 const ACCEPT_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"]
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENTS = 4
@@ -68,11 +61,6 @@ type FileUIPart = {
 
 type ChatPanelProps = {
   chatId?: string
-}
-
-type PersistedMessagesState = {
-  chatId?: string
-  messages: ChatMessage[]
 }
 
 function isFilePart(part: { type: string }): part is FileUIPart {
@@ -135,37 +123,6 @@ async function fetchChatMediaAsDataURL(url: string, token: string) {
   if (!res.ok) throw new Error(i18n.t("chat.imageLoadFailed"))
 
   return readBlobAsDataURL(await res.blob())
-}
-
-async function inlineChatFilesForModel(messages: UIMessage[], token: string) {
-  return Promise.all(
-    messages.map(async (message) => {
-      if (message.role !== "user") return message
-
-      const parts = await Promise.all(
-        message.parts.map(async (part) => {
-          if (!isFilePart(part)) return part
-          if (!isImageFilePart(part)) return null
-          if (part.url.startsWith("data:")) return part
-
-          if (!isLocalChatMediaURL(part.url) && !part.url.startsWith("blob:")) {
-            return null
-          }
-
-          const modelPart = { ...part }
-          return {
-            ...modelPart,
-            url: await fetchChatMediaAsDataURL(part.url, token),
-          }
-        })
-      )
-
-      return {
-        ...message,
-        parts: parts.filter((part) => part !== null) as UIMessage["parts"],
-      }
-    })
-  )
 }
 
 function ChatImage({
@@ -297,28 +254,6 @@ function MessageBubble({ message }: { message: UIMessage }) {
   )
 }
 
-function chatIdFromBody(body: unknown, fallback?: string) {
-  if (body && typeof body === "object" && "chatId" in body) {
-    const chatId = (body as { chatId?: unknown }).chatId
-    if (typeof chatId === "string") return chatId
-  }
-  return fallback
-}
-
-function shouldPersistUserMessage(body: unknown) {
-  if (body && typeof body === "object" && "skipPersistUser" in body) {
-    return (body as { skipPersistUser?: unknown }).skipPersistUser !== true
-  }
-  return true
-}
-
-function shouldUseWebSearch(body: unknown, fallback: boolean) {
-  if (body && typeof body === "object" && "webSearch" in body) {
-    return (body as { webSearch?: unknown }).webSearch === true
-  }
-  return fallback
-}
-
 function hasRenderableAssistantParts(parts: UIMessage["parts"]) {
   return parts.some(
     (part) =>
@@ -336,170 +271,15 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
   const [attachments, setAttachments] = useState<LocalAttachment[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [persistedState, setPersistedState] =
-    useState<PersistedMessagesState>({
-      chatId: undefined,
-      messages: [],
-    })
-  const [loadingMessages, setLoadingMessages] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const sendingRef = useRef(false)
-  const skipLoadRef = useRef<string | undefined>(undefined)
-
-  const initialMessages = useMemo(() => {
-    if (!chatId || persistedState.chatId !== chatId) return []
-    return chatMessagesToUIMessages(persistedState.messages)
-  }, [chatId, persistedState])
-
-  const appendPersistedMessage = useCallback(
-    (message: ChatMessage, targetChatId = message.session_id) => {
-      setPersistedState((prev) => {
-        if (message.session_id !== targetChatId) return prev
-        if (prev.chatId !== targetChatId) return prev
-        if (prev.messages.some((item) => item.id === message.id)) return prev
-        return {
-          chatId: prev.chatId,
-          messages: [...prev.messages, message],
-        }
-      })
-    },
-    []
-  )
-
-  const transport = useMemo<ChatTransport<UIMessage>>(
-    () => ({
-      async sendMessages({ messages, abortSignal, body }) {
-        const targetChatId = chatIdFromBody(body, chatId)
-        if (!targetChatId) throw new Error(t("errors.missingChatId"))
-
-        const userMessage = [...messages]
-          .reverse()
-          .find((message) => message.role === "user")
-        if (userMessage && shouldPersistUserMessage(body)) {
-          const saved = await appendChatMessage(
-            targetChatId,
-            "user",
-            uiMessageToMessageParts(userMessage)
-          )
-          appendPersistedMessage(saved, targetChatId)
-        }
-
-        const token = getToken()
-        if (!token) throw new Error(t("errors.notLoggedIn"))
-        const openai = createOpenAI({
-          apiKey: token,
-          baseURL: `${window.location.origin}/v1`,
-        })
-        const modelMessages = await inlineChatFilesForModel(messages, token)
-        const tools = shouldUseWebSearch(body, webSearchEnabled)
-          ? { web_search: openai.tools.webSearch() }
-          : undefined
-
-        const result = streamText({
-          model: openai.responses(CHAT_MODEL),
-          messages: await convertToModelMessages(modelMessages),
-          tools,
-          stopWhen: tools ? stepCountIs(5) : undefined,
-          abortSignal,
-          providerOptions: {
-            openai: {
-              store: false,
-            } satisfies OpenAILanguageModelResponsesOptions,
-          },
-        })
-
-        return result.toUIMessageStream({
-          originalMessages: messages,
-          sendSources: true,
-          onFinish: async ({ responseMessage }) => {
-            const saved = await appendChatMessage(
-              targetChatId,
-              "assistant",
-              uiMessageToMessageParts(responseMessage)
-            )
-            appendPersistedMessage(saved, targetChatId)
-          },
-        })
-      },
-      async reconnectToStream() {
-        return null
-      },
-    }),
-    [appendPersistedMessage, chatId, t, webSearchEnabled]
-  )
-
-  const { messages, setMessages, sendMessage, status, stop, clearError } =
-    useChat({
-      messages: initialMessages,
-      transport,
-      onError: (err) => {
-        toast.error(t("chat.replyFailed", { message: err.message }))
-      },
-    })
+  const { messages, status, stop, clearError, loadingMessages, runtime } =
+    useRuntimeChat(chatId)
 
   const isBusy = status === "submitted" || status === "streaming"
 
-  useEffect(() => {
-    let cancelled = false
-    // queueMicrotask defers the loading-state set past the effect commit, so
-    // the lint rule against synchronous setState-in-effect stays satisfied.
-    queueMicrotask(() => {
-      if (cancelled) return
-      if (!chatId) {
-        setPersistedState({ chatId: undefined, messages: [] })
-        setLoadingMessages(false)
-        return
-      }
-      if (skipLoadRef.current === chatId) {
-        skipLoadRef.current = undefined
-        setLoadingMessages(false)
-        return
-      }
-      setLoadingMessages(true)
-      listChatMessages(chatId)
-        .then((next) => {
-          if (!cancelled) {
-            setPersistedState({ chatId, messages: next })
-          }
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setPersistedState({ chatId: undefined, messages: [] })
-            toast.error(
-              err instanceof Error
-                ? err.message
-                : t("errors.loadMessagesFailed")
-            )
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setLoadingMessages(false)
-        })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [chatId, t])
-
-  useEffect(() => {
-    if (isBusy || sendingRef.current) {
-      return
-    }
-
-    if (!chatId || persistedState.chatId !== chatId) {
-      setMessages([])
-      clearError()
-      return
-    }
-    setMessages(initialMessages)
-    clearError()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, persistedState.chatId, initialMessages, isBusy])
-
   async function createChatForMessage(text: string) {
     const created = await createChat(draftTitleFromText(text))
-    setPersistedState({ chatId: created.id, messages: [] })
-    skipLoadRef.current = created.id
+    runtime.markLoaded(created.id)
     navigate(`/chat/${created.id}`, { replace: true })
     return created.id
   }
@@ -553,12 +333,13 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
   async function submit() {
     const text = input.trim()
     const pendingAttachments = attachments
+    const activeSession = runtime.getSession(chatId ?? DRAFT_CHAT_ID)
     if (
       (!text && pendingAttachments.length === 0) ||
-      isBusy ||
+      activeSession.sending ||
+      isStreamingStatus(activeSession.chat.status) ||
       loadingMessages ||
-      uploading ||
-      sendingRef.current
+      uploading
     ) {
       return
     }
@@ -567,7 +348,8 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
     setAttachments([])
     clearError()
     let savedUser: ChatMessage | null = null
-    sendingRef.current = true
+    let targetSession = activeSession
+    activeSession.sending = true
     try {
       const titleSeed =
         text || pendingAttachments[0]?.name || t("chat.imageMessage")
@@ -581,23 +363,18 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
         })),
         ...(text ? [{ type: "text" as const, text }] : []),
       ]
-      const modelParts: UIMessage["parts"] = [
-        ...pendingAttachments.map((attachment) => ({
-          type: "file" as const,
-          mediaType: attachment.mediaType,
-          url: attachment.dataUrl,
-          filename: attachment.name,
-        })),
-        ...(text ? [{ type: "text" as const, text }] : []),
-      ]
-
+      targetSession = runtime.getSession(targetChatId)
+      if (targetSession !== activeSession) {
+        targetSession.sending = true
+        activeSession.sending = false
+      }
+      targetSession.chat.clearError()
       savedUser = await appendChatMessage(targetChatId, "user", storageParts)
-      const sendPromise = sendMessage(
-        {
-          id: savedUser.id,
-          role: "user",
-          parts: modelParts,
-        },
+      const savedUserMessage = chatMessagesToUIMessages([savedUser])[0]
+      if (!savedUserMessage) throw new Error(t("errors.sendFailed"))
+
+      await targetSession.chat.sendMessage(
+        savedUserMessage,
         {
           body: {
             chatId: targetChatId,
@@ -606,8 +383,6 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
           },
         }
       )
-      appendPersistedMessage(savedUser, targetChatId)
-      await sendPromise
     } catch (err) {
       if (!savedUser) {
         setInput(text)
@@ -615,7 +390,8 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
         toast.error(err instanceof Error ? err.message : t("errors.sendFailed"))
       }
     } finally {
-      sendingRef.current = false
+      targetSession.sending = false
+      activeSession.sending = false
     }
   }
 

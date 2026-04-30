@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
+import { useChatRuntime } from "@/lib/chat-runtime-context"
 import { deleteChat, listChats, type ChatSession } from "@/lib/chats-client"
 import {
   AlertDialog,
@@ -37,9 +38,9 @@ import {
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { SidebarUserFooter } from "@/components/sidebar-user-footer"
 import { ChatHeader } from "@/components/chat/chat-header"
 import { ChatPanel } from "@/components/chat/chat-panel"
+import { SidebarUserFooter } from "@/components/sidebar-user-footer"
 
 function displayTitle(chat: ChatSession, fallback: string) {
   return chat.title.trim() || fallback
@@ -135,6 +136,7 @@ function ChatSidebar({ chats, activeChatId, onDeleteChat }: ChatSidebarProps) {
 export default function ChatPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const chatRuntime = useChatRuntime()
   const params = useParams()
   const activeChatId = params.id
   const [chats, setChats] = useState<ChatSession[]>([])
@@ -197,6 +199,7 @@ export default function ChatPage() {
     setDeleting(true)
     try {
       await deleteChat(pendingDelete.id)
+      chatRuntime.removeSession(pendingDelete.id)
       setChats((prev) => prev.filter((chat) => chat.id !== pendingDelete.id))
       if (pendingDelete.id === activeChatId) {
         navigate("/chat", { replace: true })
