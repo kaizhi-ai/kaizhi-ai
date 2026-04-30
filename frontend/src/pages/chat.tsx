@@ -35,6 +35,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { SidebarUserFooter } from "@/components/sidebar-user-footer"
 import { ChatHeader } from "@/components/chat/chat-header"
@@ -42,6 +43,93 @@ import { ChatPanel } from "@/components/chat/chat-panel"
 
 function displayTitle(chat: ChatSession, fallback: string) {
   return chat.title.trim() || fallback
+}
+
+type ChatSidebarProps = {
+  chats: ChatSession[]
+  activeChatId: string | undefined
+  onDeleteChat: (chat: ChatSession) => void
+}
+
+function ChatSidebar({ chats, activeChatId, onDeleteChat }: ChatSidebarProps) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  function handleNavigate(path: string) {
+    navigate(path)
+    if (isMobile) setOpenMobile(false)
+  }
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex items-center justify-between gap-2 overflow-hidden px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <span className="truncate text-sm font-semibold whitespace-nowrap group-data-[collapsible=icon]:hidden">
+            Kaizhi Chat
+          </span>
+          <SidebarTrigger className="shrink-0" />
+        </div>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip={t("chat.newChat")}
+              onClick={() => handleNavigate("/chat")}
+            >
+              <Plus />
+              <span>{t("chat.newChat")}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>{t("chat.recent")}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {chats.map((chat) => {
+                const isActive = chat.id === activeChatId
+                return (
+                  <SidebarMenuItem key={chat.id}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      onClick={() => handleNavigate(`/chat/${chat.id}`)}
+                    >
+                      <span className="truncate">
+                        {displayTitle(chat, t("chat.newChat"))}
+                      </span>
+                    </SidebarMenuButton>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <SidebarMenuAction
+                            showOnHover
+                            aria-label={t("common.moreActions")}
+                          />
+                        }
+                      >
+                        <MoreHorizontal />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="right" align="start">
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => onDeleteChat(chat)}
+                        >
+                          <Trash2 />
+                          {t("common.delete")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarUserFooter />
+    </Sidebar>
+  )
 }
 
 export default function ChatPage() {
@@ -130,73 +218,11 @@ export default function ChatPage() {
 
   return (
     <SidebarProvider className="h-dvh overflow-hidden bg-background text-foreground">
-      <Sidebar collapsible="icon">
-        <SidebarHeader>
-          <div className="flex items-center justify-between gap-2 overflow-hidden px-1 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-            <span className="truncate text-sm font-semibold whitespace-nowrap group-data-[collapsible=icon]:hidden">
-              Kaizhi Chat
-            </span>
-            <SidebarTrigger className="shrink-0" />
-          </div>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip={t("chat.newChat")}
-                onClick={() => navigate("/chat")}
-              >
-                <Plus />
-                <span>{t("chat.newChat")}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>{t("chat.recent")}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {chats.map((chat) => {
-                  const isActive = chat.id === activeChatId
-                  return (
-                    <SidebarMenuItem key={chat.id}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        onClick={() => navigate(`/chat/${chat.id}`)}
-                      >
-                        <span className="truncate">
-                          {displayTitle(chat, t("chat.newChat"))}
-                        </span>
-                      </SidebarMenuButton>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger
-                          render={
-                            <SidebarMenuAction
-                              showOnHover
-                              aria-label={t("common.moreActions")}
-                            />
-                          }
-                        >
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent side="right" align="start">
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => setPendingDelete(chat)}
-                          >
-                            <Trash2 />
-                            {t("common.delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </SidebarMenuItem>
-                  )
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-        <SidebarUserFooter />
-      </Sidebar>
+      <ChatSidebar
+        chats={chats}
+        activeChatId={activeChatId}
+        onDeleteChat={setPendingDelete}
+      />
 
       <SidebarInset className="flex h-dvh min-w-0 flex-col">
         <ChatHeader title={headerTitle} />
