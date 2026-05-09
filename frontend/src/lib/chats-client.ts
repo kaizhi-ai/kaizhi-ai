@@ -35,6 +35,7 @@ const SUPPORTED_IMAGE_MIME = new Set([
   "image/gif",
 ])
 const WEB_SEARCH_TOOL_TYPES = new Set(["tool-web_search", "tool-google_search"])
+const IMAGE_GENERATION_TOOL_TYPE = "tool-image_generation"
 const WEB_SEARCH_TOOL_STATES = new Set([
   "input-streaming",
   "input-available",
@@ -45,6 +46,7 @@ const WEB_SEARCH_TOOL_STATES = new Set([
   "output-denied",
 ])
 const LOCAL_CHAT_MEDIA_PATH_RE = /^\/api\/v1\/chats\/media\/[^/?#]+\/[^/?#]+$/
+const DATA_IMAGE_URL_RE = /^data:([^;,]+);base64,(.*)$/is
 
 export type ChatSession = {
   id: string
@@ -109,6 +111,73 @@ function isHTTPURL(rawURL: string) {
     return url.protocol === "http:" || url.protocol === "https:"
   } catch {
     return false
+  }
+}
+
+function imageExtension(mediaType: string) {
+  switch (mediaType) {
+    case "image/jpeg":
+      return "jpg"
+    case "image/png":
+      return "png"
+    case "image/webp":
+      return "webp"
+    case "image/gif":
+      return "gif"
+    default:
+      return "webp"
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function generatedImageResult(part: UIMessage["parts"][number]) {
+  if (part.type !== IMAGE_GENERATION_TOOL_TYPE) return null
+  const tool = part as unknown as {
+    state?: unknown
+    output?: unknown
+    preliminary?: unknown
+  }
+  if (tool.state !== "output-available" || tool.preliminary === true) {
+    return null
+  }
+  const output = asRecord(tool.output)
+  const result = typeof output?.result === "string" ? output.result.trim() : ""
+  return result || null
+}
+
+function generatedImageBlob(result: string) {
+  let mediaType = "image/webp"
+  let base64 = result.trim()
+  const match = DATA_IMAGE_URL_RE.exec(base64)
+  if (match) {
+    mediaType = match[1].toLowerCase()
+    base64 = match[2]
+  }
+  if (!SUPPORTED_IMAGE_MIME.has(mediaType)) return null
+
+  try {
+    const binary = atob(base64.replace(/\s/g, ""))
+    const chunks: ArrayBuffer[] = []
+    for (let offset = 0; offset < binary.length; offset += 8192) {
+      const slice = binary.slice(offset, offset + 8192)
+      const buffer = new ArrayBuffer(slice.length)
+      const bytes = new Uint8Array(buffer)
+      for (let i = 0; i < slice.length; i += 1) {
+        bytes[i] = slice.charCodeAt(i)
+      }
+      chunks.push(buffer)
+    }
+    return {
+      mediaType,
+      blob: new Blob(chunks, { type: mediaType }),
+    }
+  } catch {
+    return null
   }
 }
 
@@ -194,6 +263,44 @@ export async function uploadChatAttachment(
   })
 }
 
+export async function uiMessageToMessagePartsWithGeneratedImages(
+  message: UIMessage
+): Promise<{ parts: MessagePart[]; failedUploads: number }> {
+  const parts = uiMessageToMessageParts(message)
+  const seen = new Set<string>()
+  let failedUploads = 0
+
+  for (const part of message.parts) {
+    const result = generatedImageResult(part)
+    if (!result || seen.has(result)) continue
+    seen.add(result)
+
+    const image = generatedImageBlob(result)
+    if (!image) {
+      failedUploads += 1
+      continue
+    }
+
+    try {
+      const ext = imageExtension(image.mediaType)
+      const file = new File([image.blob], `generated-image.${ext}`, {
+        type: image.mediaType,
+      })
+      const uploaded = await uploadChatAttachment(file)
+      parts.push({
+        type: "file",
+        mediaType: uploaded.mediaType,
+        url: uploaded.url,
+        filename: uploaded.name,
+      })
+    } catch {
+      failedUploads += 1
+    }
+  }
+
+  return { parts, failedUploads }
+}
+
 export function draftTitleFromText(text: string): string {
   const title = text.trim().replace(/\s+/g, " ").slice(0, 40)
   return title || i18n.t("chat.newChat")
@@ -240,6 +347,7 @@ export function uiMessageToMessageParts(message: UIMessage): MessagePart[] {
           part as unknown as Record<string, unknown>
         )
       }
+      if (part.type === IMAGE_GENERATION_TOOL_TYPE) return null
       if (part.type === "step-start") return { type: "step-start" }
       return null
     })
@@ -294,6 +402,7 @@ export function chatMessagesToUIMessages(messages: ChatMessage[]): UIMessage[] {
             ? [toolPart as unknown as UIMessage["parts"][number]]
             : []
         }
+        if (part.type === IMAGE_GENERATION_TOOL_TYPE) return []
         if (part.type === "step-start") return [{ type: "step-start" as const }]
         return []
       }),

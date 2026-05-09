@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai"
-import { Globe } from "lucide-react"
+import { Globe, Image as ImageIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Loader } from "@/components/ui/loader"
@@ -28,6 +28,20 @@ type WebSearchPart = {
 
 type NormalizedResult = { url: string; title?: string | null }
 type SourceUrlPart = { type: "source-url"; url: string; title?: string }
+type ImageGenerationPart = {
+  type: "tool-image_generation"
+  state:
+    | "input-streaming"
+    | "input-available"
+    | "approval-requested"
+    | "approval-responded"
+    | "output-available"
+    | "output-error"
+    | "output-denied"
+  output?: unknown
+  errorText?: string
+  preliminary?: boolean
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -79,6 +93,15 @@ function collectSourceUrls(parts: UIMessage["parts"]): NormalizedResult[] {
     out.push({ url: source.url, title: source.title ?? null })
   }
   return out
+}
+
+function generatedImageDataURL(part: ImageGenerationPart) {
+  if (part.state !== "output-available") return null
+  const output = asRecord(part.output)
+  const result = typeof output?.result === "string" ? output.result.trim() : ""
+  if (!result) return null
+  if (result.startsWith("data:image/")) return result
+  return `data:image/webp;base64,${result}`
 }
 
 function WebSearchStep({
@@ -192,6 +215,64 @@ function StandaloneSources({ results }: { results: NormalizedResult[] }) {
   )
 }
 
+function ImageGenerationStep({ part }: { part: ImageGenerationPart }) {
+  const { t } = useTranslation()
+  const imageSrc = generatedImageDataURL(part)
+  const isError = part.state === "output-error"
+  const isDenied = part.state === "output-denied"
+  const isDone = Boolean(imageSrc)
+  const isLoading = !isDone && !isError && !isDenied
+
+  const label = isError
+    ? t("chat.imageGenerationFailed")
+    : isDenied
+      ? t("chat.imageGenerationNotRun")
+      : isDone
+        ? t("chat.imageGenerationCompleted")
+        : t("chat.imageGenerationRunning")
+
+  return (
+    <Steps defaultOpen={Boolean(imageSrc || isError)} className="my-1">
+      <StepsTrigger
+        leftIcon={
+          isLoading ? (
+            <Loader variant="circular" size="sm" />
+          ) : (
+            <ImageIcon className="size-4" />
+          )
+        }
+        swapIconOnHover={!isLoading}
+      >
+        {label}
+      </StepsTrigger>
+      <StepsContent>
+        {isError ? (
+          <StepsItem className="text-destructive">
+            {part.errorText ?? t("errors.unknown")}
+          </StepsItem>
+        ) : imageSrc ? (
+          <StepsItem>
+            <a
+              href={imageSrc}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="block"
+            >
+              <img
+                src={imageSrc}
+                alt={t("chat.generatedImage")}
+                className="max-h-[28rem] max-w-full rounded-md border border-border object-contain"
+              />
+            </a>
+          </StepsItem>
+        ) : (
+          <StepsItem>{t("chat.imageGenerationWaiting")}</StepsItem>
+        )}
+      </StepsContent>
+    </Steps>
+  )
+}
+
 export function AssistantMessageParts({
   parts,
 }: {
@@ -228,6 +309,15 @@ export function AssistantMessageParts({
               key={index}
               part={part as unknown as WebSearchPart}
               fallbackResults={sourceUrls}
+            />
+          )
+        }
+
+        if (part.type === "tool-image_generation") {
+          return (
+            <ImageGenerationStep
+              key={index}
+              part={part as unknown as ImageGenerationPart}
             />
           )
         }

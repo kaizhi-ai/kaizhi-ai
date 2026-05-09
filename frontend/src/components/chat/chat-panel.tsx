@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react"
 import type { UIMessage } from "ai"
-import { ArrowUp, Globe, Paperclip, Plus, Square, X } from "lucide-react"
+import {
+  ArrowUp,
+  Globe,
+  Image as ImageIcon,
+  Paperclip,
+  Plus,
+  Square,
+  X,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
@@ -249,6 +257,18 @@ function MessageBubble({ message }: { message: UIMessage }) {
     <Message className="items-start">
       <div className="w-full space-y-3 break-words text-foreground dark:text-white">
         <AssistantMessageParts parts={message.parts} />
+        {images.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {images.map((image, index) => (
+              <ChatImage
+                key={`${image.url}-${index}`}
+                part={image}
+                imageClassName="max-h-[28rem] max-w-full rounded-md border border-border object-contain"
+                placeholderClassName="flex h-40 w-40 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
+              />
+            ))}
+          </div>
+        )}
       </div>
     </Message>
   )
@@ -258,8 +278,10 @@ function hasRenderableAssistantParts(parts: UIMessage["parts"]) {
   return parts.some(
     (part) =>
       (part.type === "text" && Boolean(part.text)) ||
+      part.type === "file" ||
       part.type === "tool-web_search" ||
       part.type === "tool-google_search" ||
+      part.type === "tool-image_generation" ||
       part.type === "source-url"
   )
 }
@@ -270,6 +292,7 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
   const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<LocalAttachment[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
+  const [imageGenerationEnabled, setImageGenerationEnabled] = useState(true)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { messages, status, stop, clearError, loadingMessages, runtime } =
@@ -380,6 +403,7 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
             chatId: targetChatId,
             skipPersistUser: true,
             webSearch: webSearchEnabled,
+            imageGeneration: imageGenerationEnabled,
           },
         }
       )
@@ -527,6 +551,13 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
                   >
                     <Globe className="mr-2 size-4" />
                     {t("chat.webSearch")}
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={imageGenerationEnabled}
+                    onCheckedChange={setImageGenerationEnabled}
+                  >
+                    <ImageIcon className="mr-2 size-4" />
+                    {t("chat.imageGeneration")}
                   </DropdownMenuCheckboxItem>
                 </DropdownMenuContent>
               </DropdownMenu>

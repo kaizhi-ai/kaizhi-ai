@@ -17,6 +17,7 @@ export function useRuntimeChat(chatId?: string) {
     [activeChatId, runtime]
   )
   const chat = useChat({ chat: session.chat })
+  const { setMessages } = chat
   const [loadingMessages, setLoadingMessages] = useState(false)
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export function useRuntimeChat(chatId?: string) {
         targetSession.chat.messages.length > 0 ||
         isStreamingStatus(targetSession.chat.status)
       ) {
+        setMessages(targetSession.chat.messages)
         setLoadingMessages(false)
         return
       }
@@ -42,6 +44,11 @@ export function useRuntimeChat(chatId?: string) {
       setLoadingMessages(true)
       runtime
         .ensureLoaded(chatId)
+        .then(() => {
+          if (!cancelled) {
+            setMessages(runtime.getSession(chatId).chat.messages)
+          }
+        })
         .catch((err: unknown) => {
           if (!cancelled) {
             toast.error(
@@ -59,7 +66,7 @@ export function useRuntimeChat(chatId?: string) {
     return () => {
       cancelled = true
     }
-  }, [chatId, runtime])
+  }, [chatId, runtime, setMessages])
 
   return {
     ...chat,
