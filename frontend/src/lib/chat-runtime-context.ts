@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react"
 import type { Chat } from "@ai-sdk/react"
-import type { ChatStatus, UIMessage } from "ai"
+import type { ChatStatus } from "ai"
+
+import type { ChatUIMessage } from "@/lib/chat-types"
 
 export const DRAFT_CHAT_ID = "__draft_chat__"
 
 export type RuntimeSession = {
-  chat: Chat<UIMessage>
+  chat: Chat<ChatUIMessage>
   loaded: boolean
   loading?: Promise<void>
   sending: boolean

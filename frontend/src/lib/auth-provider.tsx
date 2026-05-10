@@ -6,7 +6,7 @@ import {
   getToken,
   logoutSession,
   type AuthUser,
-} from "@/lib/auth-client"
+} from "@/lib/client"
 import { AuthContext } from "@/lib/auth-context"
 import i18n, { setStoredLanguage, supportedLanguage } from "@/lib/i18n"
 

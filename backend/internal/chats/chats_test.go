@@ -265,6 +265,7 @@ func TestChatFilePartsRequireLocalUploadedImages(t *testing.T) {
 		{name: "data URL", mediaType: "image/png", url: "data:image/png;base64,AAAA"},
 		{name: "other user local URL", mediaType: otherUploaded.MediaType, url: otherUploaded.URL},
 		{name: "missing local file", mediaType: "image/png", url: "/api/v1/chats/media/" + user.User.ID + "/missing.png"},
+		{name: "missing media type", mediaType: "", url: uploaded.URL},
 		{name: "media type mismatch", mediaType: "image/jpeg", url: uploaded.URL},
 	}
 	for _, tc := range cases {
@@ -319,6 +320,47 @@ func TestDeleteChatRemovesUploadedImages(t *testing.T) {
 	}
 }
 
+func TestDeleteChatRemovesGeneratedImages(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "delete-generated-images@example.com", "password123")
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0}
+	uploadResp := doMultipartFile(t, env.Router, "/api/v1/chats/uploads", user.AccessToken, "generated.png", image)
+	if uploadResp.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, body = %s", uploadResp.Code, uploadResp.Body.String())
+	}
+	var uploaded struct {
+		URL string `json:"url"`
+	}
+	testutil.DecodeJSON(t, uploadResp, &uploaded)
+
+	createResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", user.AccessToken, map[string]string{"title": "generated"})
+	if createResp.Code != http.StatusCreated {
+		t.Fatalf("create chat status = %d, body = %s", createResp.Code, createResp.Body.String())
+	}
+	var created chats.ChatSession
+	testutil.DecodeJSON(t, createResp, &created)
+
+	msgResp := appendGeneratedImagePart(t, env.Router, user.AccessToken, created.ID, uploaded.URL)
+	if msgResp.Code != http.StatusCreated {
+		t.Fatalf("append generated image part status = %d, body = %s", msgResp.Code, msgResp.Body.String())
+	}
+
+	delResp := testutil.DoJSON(t, env.Router, http.MethodDelete, "/api/v1/chats/"+created.ID, user.AccessToken, nil)
+	if delResp.Code != http.StatusNoContent {
+		t.Fatalf("delete chat status = %d, body = %s", delResp.Code, delResp.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, uploaded.URL, nil)
+	getReq.Header.Set("Authorization", "Bearer "+user.AccessToken)
+	getResp := httptest.NewRecorder()
+	env.Router.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusNotFound {
+		t.Fatalf("get deleted generated image status = %d, body = %s, want 404", getResp.Code, getResp.Body.String())
+	}
+}
+
 func TestDeleteChatKeepsImagesReferencedByOtherChats(t *testing.T) {
 	env := testutil.Setup(t)
 	defer env.Cleanup()
@@ -369,6 +411,58 @@ func TestDeleteChatKeepsImagesReferencedByOtherChats(t *testing.T) {
 	}
 	if !bytes.Equal(getResp.Body.Bytes(), image) {
 		t.Fatalf("shared image body = %v, want %v", getResp.Body.Bytes(), image)
+	}
+}
+
+func TestDeleteChatKeepsGeneratedImagesReferencedByOtherChats(t *testing.T) {
+	env := testutil.Setup(t)
+	defer env.Cleanup()
+
+	user := testutil.SeedUser(t, env, "shared-generated-images@example.com", "password123")
+	image := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0}
+	uploadResp := doMultipartFile(t, env.Router, "/api/v1/chats/uploads", user.AccessToken, "shared-generated.png", image)
+	if uploadResp.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, body = %s", uploadResp.Code, uploadResp.Body.String())
+	}
+	var uploaded struct {
+		URL string `json:"url"`
+	}
+	testutil.DecodeJSON(t, uploadResp, &uploaded)
+
+	firstResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", user.AccessToken, map[string]string{"title": "first"})
+	if firstResp.Code != http.StatusCreated {
+		t.Fatalf("create first chat status = %d, body = %s", firstResp.Code, firstResp.Body.String())
+	}
+	var first chats.ChatSession
+	testutil.DecodeJSON(t, firstResp, &first)
+	secondResp := testutil.DoJSON(t, env.Router, http.MethodPost, "/api/v1/chats", user.AccessToken, map[string]string{"title": "second"})
+	if secondResp.Code != http.StatusCreated {
+		t.Fatalf("create second chat status = %d, body = %s", secondResp.Code, secondResp.Body.String())
+	}
+	var second chats.ChatSession
+	testutil.DecodeJSON(t, secondResp, &second)
+
+	for _, chatID := range []string{first.ID, second.ID} {
+		msgResp := appendGeneratedImagePart(t, env.Router, user.AccessToken, chatID, uploaded.URL)
+		if msgResp.Code != http.StatusCreated {
+			t.Fatalf("append generated image part to %s status = %d, body = %s", chatID, msgResp.Code, msgResp.Body.String())
+		}
+	}
+
+	delResp := testutil.DoJSON(t, env.Router, http.MethodDelete, "/api/v1/chats/"+first.ID, user.AccessToken, nil)
+	if delResp.Code != http.StatusNoContent {
+		t.Fatalf("delete first chat status = %d, body = %s", delResp.Code, delResp.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, uploaded.URL, nil)
+	getReq.Header.Set("Authorization", "Bearer "+user.AccessToken)
+	getResp := httptest.NewRecorder()
+	env.Router.ServeHTTP(getResp, getReq)
+	if getResp.Code != http.StatusOK {
+		t.Fatalf("get shared generated image status = %d, body = %s, want 200", getResp.Code, getResp.Body.String())
+	}
+	if !bytes.Equal(getResp.Body.Bytes(), image) {
+		t.Fatalf("shared generated image body = %v, want %v", getResp.Body.Bytes(), image)
 	}
 }
 
@@ -478,6 +572,24 @@ func appendFilePart(t *testing.T, router http.Handler, token, chatID, mediaType,
 	}
 	return testutil.DoJSON(t, router, http.MethodPost, "/api/v1/chats/"+chatID+"/messages", token, map[string]any{
 		"role":  "user",
+		"parts": json.RawMessage(parts),
+	})
+}
+
+func appendGeneratedImagePart(t *testing.T, router http.Handler, token, chatID, url string) *httptest.ResponseRecorder {
+	t.Helper()
+	parts, err := json.Marshal([]map[string]any{{
+		"type":  "tool-image_generation",
+		"state": "output-available",
+		"output": map[string]string{
+			"result": url,
+		},
+	}})
+	if err != nil {
+		t.Fatalf("marshal generated image parts: %v", err)
+	}
+	return testutil.DoJSON(t, router, http.MethodPost, "/api/v1/chats/"+chatID+"/messages", token, map[string]any{
+		"role":  "assistant",
 		"parts": json.RawMessage(parts),
 	})
 }

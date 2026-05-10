@@ -22,7 +22,7 @@ import {
   updateOAuthProviderProxyURL,
   type AuthFile,
   type OAuthProviderId,
-} from "@/lib/oauth-providers-client"
+} from "@/lib/client"
 import {
   proxyEnabledFromURL,
   proxyStatusKey,

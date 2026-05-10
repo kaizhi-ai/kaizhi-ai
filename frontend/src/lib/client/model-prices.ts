@@ -1,5 +1,4 @@
-import { getToken } from "@/lib/auth-client"
-import i18n from "@/lib/i18n"
+import { del, get, patch, post } from "./http"
 
 export type ModelPrice = {
   id: string
@@ -38,45 +37,7 @@ export type ImportDefaultModelPricesResult = {
   skipped: number
 }
 
-type ErrorBody = {
-  error?: string
-  message?: string
-}
-
 const MODEL_PRICES_PATH = "/api/v1/admin/model-prices"
-
-function authToken(): string {
-  const token = getToken()
-  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
-  return token
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  const body = init.body
-  if (body !== undefined && body !== null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json")
-  }
-  headers.set("Authorization", `Bearer ${authToken()}`)
-
-  const res = await fetch(path, { ...init, headers })
-  if (!res.ok) {
-    const contentType = res.headers.get("content-type") ?? ""
-    let message = i18n.t("errors.requestFailedWithStatus", {
-      status: res.status,
-    })
-    if (contentType.includes("application/json")) {
-      const data = (await res.json().catch(() => null)) as ErrorBody | null
-      message = data?.error ?? data?.message ?? message
-    } else {
-      const text = await res.text().catch(() => "")
-      if (text) message = text
-    }
-    throw new Error(message)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
 
 function optionalString(value?: string | null) {
   const trimmed = value?.trim() ?? ""
@@ -101,7 +62,7 @@ export async function listModelPrices(input?: {
   const params = new URLSearchParams()
   if (input?.query?.trim()) params.set("q", input.query.trim())
   const suffix = params.toString() ? `?${params.toString()}` : ""
-  const data = await request<{ prices?: ModelPrice[] }>(
+  const data = await get<{ prices?: ModelPrice[] }>(
     `${MODEL_PRICES_PATH}${suffix}`
   )
   return data.prices ?? []
@@ -110,10 +71,10 @@ export async function listModelPrices(input?: {
 export async function createModelPrice(
   input: ModelPriceInput
 ): Promise<ModelPrice> {
-  const data = await request<{ price: ModelPrice }>(MODEL_PRICES_PATH, {
-    method: "POST",
-    body: JSON.stringify(pricePayload(input)),
-  })
+  const data = await post<{ price: ModelPrice }>(
+    MODEL_PRICES_PATH,
+    pricePayload(input)
+  )
   return data.price
 }
 
@@ -121,28 +82,20 @@ export async function updateModelPrice(
   id: string,
   input: ModelPriceInput
 ): Promise<ModelPrice> {
-  const data = await request<{ price: ModelPrice }>(
+  const data = await patch<{ price: ModelPrice }>(
     `${MODEL_PRICES_PATH}/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(pricePayload(input)),
-    }
+    pricePayload(input)
   )
   return data.price
 }
 
 export async function deleteModelPrice(id: string): Promise<void> {
-  await request<void>(`${MODEL_PRICES_PATH}/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  })
+  await del<void>(`${MODEL_PRICES_PATH}/${encodeURIComponent(id)}`)
 }
 
 export async function importDefaultModelPrices(): Promise<ImportDefaultModelPricesResult> {
-  const data = await request<{ result: ImportDefaultModelPricesResult }>(
-    `${MODEL_PRICES_PATH}/import-defaults`,
-    {
-      method: "POST",
-    }
+  const data = await post<{ result: ImportDefaultModelPricesResult }>(
+    `${MODEL_PRICES_PATH}/import-defaults`
   )
   return data.result
 }
@@ -152,7 +105,7 @@ export async function listUnmatchedModels(
   to: string
 ): Promise<UnmatchedModel[]> {
   const params = new URLSearchParams({ from, to })
-  const data = await request<{ models?: UnmatchedModel[] }>(
+  const data = await get<{ models?: UnmatchedModel[] }>(
     `${MODEL_PRICES_PATH}/unmatched?${params.toString()}`
   )
   return data.models ?? []

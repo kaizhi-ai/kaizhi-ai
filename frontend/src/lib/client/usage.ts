@@ -1,5 +1,4 @@
-import { getToken } from "@/lib/auth-client"
-import i18n from "@/lib/i18n"
+import { get } from "./http"
 
 export type UsageSummary = {
   request_count: number
@@ -66,45 +65,7 @@ export type UsageRange = {
   to: string
 }
 
-type ErrorBody = {
-  error?: string
-  message?: string
-}
-
 const ADMIN_USAGE_PATH = "/api/v1/admin/usage"
-
-function authToken(): string {
-  const token = getToken()
-  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
-  return token
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  const body = init.body
-  if (body !== undefined && body !== null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json")
-  }
-  headers.set("Authorization", `Bearer ${authToken()}`)
-
-  const res = await fetch(path, { ...init, headers })
-  if (!res.ok) {
-    const contentType = res.headers.get("content-type") ?? ""
-    let message = i18n.t("errors.requestFailedWithStatus", {
-      status: res.status,
-    })
-    if (contentType.includes("application/json")) {
-      const data = (await res.json().catch(() => null)) as ErrorBody | null
-      message = data?.error ?? data?.message ?? message
-    } else {
-      const text = await res.text().catch(() => "")
-      if (text) message = text
-    }
-    throw new Error(message)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
 
 function rangeSuffix(range: UsageRange) {
   const params = new URLSearchParams()
@@ -117,13 +78,13 @@ function rangeSuffix(range: UsageRange) {
 export async function getAdminUsageSummary(
   range: UsageRange
 ): Promise<{ from: string; to: string; usage: UsageSummary }> {
-  return request(`${ADMIN_USAGE_PATH}${rangeSuffix(range)}`)
+  return get(`${ADMIN_USAGE_PATH}${rangeSuffix(range)}`)
 }
 
 export async function listAdminUsageByAPIKey(
   range: UsageRange
 ): Promise<APIKeyUsage[]> {
-  const data = await request<{
+  const data = await get<{
     from: string
     to: string
     api_keys?: APIKeyUsage[]
@@ -134,7 +95,7 @@ export async function listAdminUsageByAPIKey(
 export async function listAdminUsageByUser(
   range: UsageRange
 ): Promise<UserUsage[]> {
-  const data = await request<{
+  const data = await get<{
     from: string
     to: string
     users?: UserUsage[]
@@ -145,7 +106,7 @@ export async function listAdminUsageByUser(
 export async function listAdminUsageByModel(
   range: UsageRange
 ): Promise<ModelUsage[]> {
-  const data = await request<{
+  const data = await get<{
     from: string
     to: string
     models?: ModelUsage[]

@@ -1,5 +1,4 @@
-import { getToken } from "@/lib/auth-client"
-import i18n from "@/lib/i18n"
+import { get, patch, post } from "./http"
 
 export type AdminUserRole = "user" | "admin"
 export type AdminUserStatus = "active" | "banned"
@@ -24,52 +23,14 @@ export type AdminUser = {
   updated_at: string
 }
 
-type ErrorBody = {
-  error?: string
-  message?: string
-}
-
 const ADMIN_USERS_PATH = "/api/v1/admin/users"
-
-function authToken(): string {
-  const token = getToken()
-  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
-  return token
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  const body = init.body
-  if (body !== undefined && body !== null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json")
-  }
-  headers.set("Authorization", `Bearer ${authToken()}`)
-
-  const res = await fetch(path, { ...init, headers })
-  if (!res.ok) {
-    const contentType = res.headers.get("content-type") ?? ""
-    let message = i18n.t("errors.requestFailedWithStatus", {
-      status: res.status,
-    })
-    if (contentType.includes("application/json")) {
-      const data = (await res.json().catch(() => null)) as ErrorBody | null
-      message = data?.error ?? data?.message ?? message
-    } else {
-      const text = await res.text().catch(() => "")
-      if (text) message = text
-    }
-    throw new Error(message)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
 
 function userPath(id: string) {
   return `${ADMIN_USERS_PATH}/${encodeURIComponent(id)}`
 }
 
 export async function listAdminUsers(): Promise<AdminUser[]> {
-  const data = await request<{ users?: AdminUser[] }>(ADMIN_USERS_PATH)
+  const data = await get<{ users?: AdminUser[] }>(ADMIN_USERS_PATH)
   return data.users ?? []
 }
 
@@ -95,10 +56,7 @@ export async function createAdminUser(input: {
   if (input.quota_7d_cost_usd !== undefined) {
     payload.quota_7d_cost_usd = input.quota_7d_cost_usd
   }
-  const data = await request<{ user: AdminUser }>(ADMIN_USERS_PATH, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  })
+  const data = await post<{ user: AdminUser }>(ADMIN_USERS_PATH, payload)
   return data.user
 }
 
@@ -124,10 +82,7 @@ export async function updateAdminUser(
   if (input.quota_7d_cost_usd !== undefined) {
     payload.quota_7d_cost_usd = input.quota_7d_cost_usd
   }
-  const data = await request<{ user: AdminUser }>(userPath(id), {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  })
+  const data = await patch<{ user: AdminUser }>(userPath(id), payload)
   return data.user
 }
 
@@ -135,22 +90,15 @@ export async function resetAdminUserPassword(
   id: string,
   password: string
 ): Promise<void> {
-  await request<void>(`${userPath(id)}/password`, {
-    method: "POST",
-    body: JSON.stringify({ password }),
-  })
+  await post<void>(`${userPath(id)}/password`, { password })
 }
 
 export async function banAdminUser(id: string): Promise<AdminUser> {
-  const data = await request<{ user: AdminUser }>(`${userPath(id)}/ban`, {
-    method: "POST",
-  })
+  const data = await post<{ user: AdminUser }>(`${userPath(id)}/ban`)
   return data.user
 }
 
 export async function unbanAdminUser(id: string): Promise<AdminUser> {
-  const data = await request<{ user: AdminUser }>(`${userPath(id)}/unban`, {
-    method: "POST",
-  })
+  const data = await post<{ user: AdminUser }>(`${userPath(id)}/unban`)
   return data.user
 }

@@ -13,7 +13,7 @@ import {
   type OpenAICompatibilityAPIKeyInput,
   type OpenAICompatibilityProvider,
   type OpenAICompatibilityProviderModel,
-} from "@/lib/openai-compatibility-providers-client"
+} from "@/lib/client"
 import {
   proxyEnabledFromURL,
   proxySummaryKey,

@@ -3,7 +3,7 @@ import { Check, Save } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import { updateCurrentUser } from "@/lib/auth-client"
+import { updateCurrentUser } from "@/lib/client"
 import { useAuth } from "@/lib/auth-context"
 import {
   languageOptions,

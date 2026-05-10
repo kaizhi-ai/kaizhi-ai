@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react"
 
-import type { AuthUser } from "@/lib/auth-client"
+import type { AuthUser } from "@/lib/client"
 
 export type AuthContextValue = {
   user: AuthUser | null

@@ -25,7 +25,7 @@ import {
   updateModelPrice,
   type ModelPrice,
   type ModelPriceInput,
-} from "@/lib/admin-model-prices-client"
+} from "@/lib/client"
 import {
   AlertDialog,
   AlertDialogAction,

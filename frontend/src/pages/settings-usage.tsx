@@ -3,7 +3,7 @@ import { RefreshCw } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
-import type { AuthUser } from "@/lib/auth-client"
+import type { AuthUser } from "@/lib/client"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"

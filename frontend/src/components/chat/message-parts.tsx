@@ -1,7 +1,7 @@
-import type { UIMessage } from "ai"
 import { Globe, Image as ImageIcon } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import type { ChatUIMessage, ChatUIPart } from "@/lib/chat-types"
 import { Loader } from "@/components/ui/loader"
 import { MessageContent } from "@/components/ui/message"
 import {
@@ -11,37 +11,12 @@ import {
   StepsTrigger,
 } from "@/components/ui/steps"
 
-type WebSearchPart = {
-  type: "tool-web_search" | "tool-google_search"
-  state:
-    | "input-streaming"
-    | "input-available"
-    | "approval-requested"
-    | "approval-responded"
-    | "output-available"
-    | "output-error"
-    | "output-denied"
-  input?: unknown
-  output?: unknown
-  errorText?: string
-}
-
 type NormalizedResult = { url: string; title?: string | null }
-type SourceUrlPart = { type: "source-url"; url: string; title?: string }
-type ImageGenerationPart = {
-  type: "tool-image_generation"
-  state:
-    | "input-streaming"
-    | "input-available"
-    | "approval-requested"
-    | "approval-responded"
-    | "output-available"
-    | "output-error"
-    | "output-denied"
-  output?: unknown
-  errorText?: string
-  preliminary?: boolean
-}
+type WebSearchPart = Extract<ChatUIPart, { type: "tool-web_search" }>
+type ImageGenerationPart = Extract<
+  ChatUIPart,
+  { type: "tool-image_generation" }
+>
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -76,29 +51,28 @@ function extractQuery(part: WebSearchPart): string {
   const input = asRecord(part.input)
   if (typeof input?.query === "string") return input.query
 
+  if (part.state !== "output-available") return ""
   const output = asRecord(part.output)
   const action = asRecord(output?.action)
   if (typeof action?.query === "string") return action.query
   return ""
 }
 
-function collectSourceUrls(parts: UIMessage["parts"]): NormalizedResult[] {
+function collectSourceUrls(parts: ChatUIMessage["parts"]): NormalizedResult[] {
   const seen = new Set<string>()
   const out: NormalizedResult[] = []
   for (const part of parts) {
     if (part.type !== "source-url") continue
-    const source = part as SourceUrlPart
-    if (!source.url || seen.has(source.url)) continue
-    seen.add(source.url)
-    out.push({ url: source.url, title: source.title ?? null })
+    if (!part.url || seen.has(part.url)) continue
+    seen.add(part.url)
+    out.push({ url: part.url, title: part.title ?? null })
   }
   return out
 }
 
 function generatedImageDataURL(part: ImageGenerationPart) {
   if (part.state !== "output-available") return null
-  const output = asRecord(part.output)
-  const result = typeof output?.result === "string" ? output.result.trim() : ""
+  const result = part.output.result.trim()
   if (!result) return null
   if (result.startsWith("data:image/")) return result
   return `data:image/webp;base64,${result}`
@@ -223,66 +197,56 @@ function ImageGenerationStep({ part }: { part: ImageGenerationPart }) {
   const isDone = Boolean(imageSrc)
   const isLoading = !isDone && !isError && !isDenied
 
+  if (imageSrc) {
+    return (
+      <a
+        href={imageSrc}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="my-1 block"
+      >
+        <img
+          src={imageSrc}
+          alt={t("chat.generatedImage")}
+          className="max-h-[28rem] max-w-full rounded-md border border-border object-contain"
+        />
+      </a>
+    )
+  }
+
   const label = isError
-    ? t("chat.imageGenerationFailed")
+    ? (part.errorText ?? t("chat.imageGenerationFailed"))
     : isDenied
       ? t("chat.imageGenerationNotRun")
-      : isDone
-        ? t("chat.imageGenerationCompleted")
-        : t("chat.imageGenerationRunning")
+      : isLoading
+        ? t("chat.imageGenerationRunning")
+        : t("chat.imageGenerationWaiting")
 
   return (
-    <Steps defaultOpen={Boolean(imageSrc || isError)} className="my-1">
-      <StepsTrigger
-        leftIcon={
-          isLoading ? (
-            <Loader variant="circular" size="sm" />
-          ) : (
-            <ImageIcon className="size-4" />
-          )
-        }
-        swapIconOnHover={!isLoading}
-      >
-        {label}
-      </StepsTrigger>
-      <StepsContent>
-        {isError ? (
-          <StepsItem className="text-destructive">
-            {part.errorText ?? t("errors.unknown")}
-          </StepsItem>
-        ) : imageSrc ? (
-          <StepsItem>
-            <a
-              href={imageSrc}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="block"
-            >
-              <img
-                src={imageSrc}
-                alt={t("chat.generatedImage")}
-                className="max-h-[28rem] max-w-full rounded-md border border-border object-contain"
-              />
-            </a>
-          </StepsItem>
-        ) : (
-          <StepsItem>{t("chat.imageGenerationWaiting")}</StepsItem>
-        )}
-      </StepsContent>
-    </Steps>
+    <div
+      className={
+        isError
+          ? "my-1 flex items-center gap-2 text-sm text-destructive"
+          : "my-1 flex items-center gap-2 text-sm text-muted-foreground"
+      }
+    >
+      {isLoading ? (
+        <Loader variant="circular" size="sm" />
+      ) : (
+        <ImageIcon className="size-4" />
+      )}
+      <span>{label}</span>
+    </div>
   )
 }
 
 export function AssistantMessageParts({
   parts,
 }: {
-  parts: UIMessage["parts"]
+  parts: ChatUIMessage["parts"]
 }) {
   const sourceUrls = collectSourceUrls(parts)
-  const hasSearchStep = parts.some(
-    (part) =>
-      part.type === "tool-web_search" || part.type === "tool-google_search"
-  )
+  const hasSearchStep = parts.some((part) => part.type === "tool-web_search")
 
   return (
     <>
@@ -300,26 +264,18 @@ export function AssistantMessageParts({
           )
         }
 
-        if (
-          part.type === "tool-web_search" ||
-          part.type === "tool-google_search"
-        ) {
+        if (part.type === "tool-web_search") {
           return (
             <WebSearchStep
               key={index}
-              part={part as unknown as WebSearchPart}
+              part={part}
               fallbackResults={sourceUrls}
             />
           )
         }
 
         if (part.type === "tool-image_generation") {
-          return (
-            <ImageGenerationStep
-              key={index}
-              part={part as unknown as ImageGenerationPart}
-            />
-          )
+          return <ImageGenerationStep key={index} part={part} />
         }
 
         return null

@@ -13,7 +13,7 @@ import {
   type ProviderAPIKey,
   type ProviderAPIKeyKind,
   type ProviderAPIKeyModel,
-} from "@/lib/provider-api-keys-client"
+} from "@/lib/client"
 import {
   proxyEnabledFromURL,
   proxyStatusKey,

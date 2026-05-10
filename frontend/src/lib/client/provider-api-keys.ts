@@ -1,5 +1,4 @@
-import { getToken } from "@/lib/auth-client"
-import i18n from "@/lib/i18n"
+import { del, get, patch, post } from "./http"
 
 export type ProviderAPIKeyKind = "claude" | "gemini" | "codex"
 
@@ -25,11 +24,6 @@ export type ProviderAPIKey = {
   excluded_models?: string[]
 }
 
-type ErrorBody = {
-  error?: string
-  message?: string
-}
-
 type ProviderAPIKeyInput = {
   provider: ProviderAPIKeyKind
   apiKey?: string
@@ -39,7 +33,7 @@ type ProviderAPIKeyInput = {
   excludedModels: string[]
 }
 
-type FetchModelsInput = {
+type ProviderFetchModelsInput = {
   provider: ProviderAPIKeyKind
   id?: string
   apiKey?: string
@@ -49,45 +43,12 @@ type FetchModelsInput = {
 
 const API_KEY_PROVIDER_PATH = "/api/v1/api-key-provider"
 
-function authToken(): string {
-  const token = getToken()
-  if (!token) throw new Error(i18n.t("errors.notLoggedIn"))
-  return token
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  const body = init.body
-  if (body !== undefined && body !== null && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json")
-  }
-  headers.set("Authorization", `Bearer ${authToken()}`)
-
-  const res = await fetch(path, { ...init, headers })
-  if (!res.ok) {
-    const contentType = res.headers.get("content-type") ?? ""
-    let message = i18n.t("errors.requestFailedWithStatus", {
-      status: res.status,
-    })
-    if (contentType.includes("application/json")) {
-      const data = (await res.json().catch(() => null)) as ErrorBody | null
-      message = data?.error ?? data?.message ?? message
-    } else {
-      const text = await res.text().catch(() => "")
-      if (text) message = text
-    }
-    throw new Error(message)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
-
 function providerQuery(provider?: ProviderAPIKeyKind) {
   if (!provider) return ""
   return `?${new URLSearchParams({ provider }).toString()}`
 }
 
-function normalizeModels(models: ProviderAPIKeyModel[]) {
+function normalizeProviderModels(models: ProviderAPIKeyModel[]) {
   return models
     .map((model) => {
       const name = model.name.trim()
@@ -101,12 +62,15 @@ function normalizeStrings(values: string[]) {
   return values.map((value) => value.trim()).filter(Boolean)
 }
 
-function providerPayload(input: ProviderAPIKeyInput, includeEmptyKey: boolean) {
+function providerAPIKeyPayload(
+  input: ProviderAPIKeyInput,
+  includeEmptyKey: boolean
+) {
   const payload: Record<string, unknown> = {
     provider: input.provider,
     base_url: input.baseUrl.trim(),
     proxy_url: input.proxyUrl.trim(),
-    models: normalizeModels(input.models),
+    models: normalizeProviderModels(input.models),
     excluded_models: normalizeStrings(input.excludedModels),
   }
   const apiKey = input.apiKey?.trim() ?? ""
@@ -117,7 +81,7 @@ function providerPayload(input: ProviderAPIKeyInput, includeEmptyKey: boolean) {
 export async function listProviderAPIKeys(
   provider?: ProviderAPIKeyKind
 ): Promise<ProviderAPIKey[]> {
-  const data = await request<{ keys?: ProviderAPIKey[] }>(
+  const data = await get<{ keys?: ProviderAPIKey[] }>(
     `${API_KEY_PROVIDER_PATH}${providerQuery(provider)}`
   )
   return data.keys ?? []
@@ -126,33 +90,28 @@ export async function listProviderAPIKeys(
 export async function createProviderAPIKey(
   input: ProviderAPIKeyInput
 ): Promise<ProviderAPIKey> {
-  return request<ProviderAPIKey>(API_KEY_PROVIDER_PATH, {
-    method: "POST",
-    body: JSON.stringify(providerPayload(input, true)),
-  })
+  return post<ProviderAPIKey>(
+    API_KEY_PROVIDER_PATH,
+    providerAPIKeyPayload(input, true)
+  )
 }
 
 export async function updateProviderAPIKey(
   id: string,
   input: ProviderAPIKeyInput
 ): Promise<ProviderAPIKey> {
-  return request<ProviderAPIKey>(
+  return patch<ProviderAPIKey>(
     `${API_KEY_PROVIDER_PATH}/${encodeURIComponent(id)}`,
-    {
-      method: "PATCH",
-      body: JSON.stringify(providerPayload(input, false)),
-    }
+    providerAPIKeyPayload(input, false)
   )
 }
 
 export async function deleteProviderAPIKey(id: string): Promise<void> {
-  await request<void>(`${API_KEY_PROVIDER_PATH}/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  })
+  await del<void>(`${API_KEY_PROVIDER_PATH}/${encodeURIComponent(id)}`)
 }
 
 export async function fetchProviderAPIKeyModels(
-  input: FetchModelsInput
+  input: ProviderFetchModelsInput
 ): Promise<string[]> {
   const payload: Record<string, string> = {
     provider: input.provider,
@@ -162,12 +121,9 @@ export async function fetchProviderAPIKeyModels(
   const apiKey = input.apiKey?.trim()
   if (apiKey) payload.api_key = apiKey
   if (input.proxyUrl !== undefined) payload.proxy_url = input.proxyUrl.trim()
-  const data = await request<{ ids?: string[] }>(
+  const data = await post<{ ids?: string[] }>(
     `${API_KEY_PROVIDER_PATH}/models`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }
+    payload
   )
   return data.ids ?? []
 }

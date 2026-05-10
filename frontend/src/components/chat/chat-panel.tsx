@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import type { UIMessage } from "ai"
+import { useRef, useState } from "react"
+import { isFileUIPart } from "ai"
+import type { FileUIPart } from "ai"
 import {
   ArrowUp,
   Globe,
@@ -13,20 +14,15 @@ import { useTranslation } from "react-i18next"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
-import { getToken } from "@/lib/auth-client"
+import { DRAFT_CHAT_ID, isStreamingStatus } from "@/lib/chat-runtime-context"
+import type { ChatUIMessage } from "@/lib/chat-types"
 import {
   appendChatMessage,
-  chatMessagesToUIMessages,
   createChat,
   draftTitleFromText,
+  readBlobAsDataURL,
   textFromUIMessage,
-  uploadChatAttachment,
-  type ChatAttachment,
-  type ChatMessage,
-  type MessagePart,
-} from "@/lib/chats-client"
-import { DRAFT_CHAT_ID, isStreamingStatus } from "@/lib/chat-runtime-context"
-import i18n from "@/lib/i18n"
+} from "@/lib/client"
 import { useRuntimeChat } from "@/lib/use-runtime-chat"
 import { Button } from "@/components/ui/button"
 import {
@@ -56,169 +52,53 @@ const ACCEPT_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"]
 const MAX_FILE_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENTS = 4
 
-type LocalAttachment = ChatAttachment & {
-  dataUrl: string
-}
-
-type FileUIPart = {
-  type: "file"
-  mediaType: string
-  url: string
-  filename?: string
-}
-
 type ChatPanelProps = {
   chatId?: string
 }
 
-function isFilePart(part: { type: string }): part is FileUIPart {
-  if (part.type !== "file") return false
-  const file = part as Partial<FileUIPart>
-  return typeof file.mediaType === "string" && typeof file.url === "string"
-}
-
-function isLocalChatMediaURL(url: string) {
-  try {
-    const parsed = new URL(url, window.location.origin)
-    return (
-      parsed.origin === window.location.origin &&
-      parsed.pathname.startsWith("/api/v1/chats/media/")
-    )
-  } catch {
-    return false
-  }
-}
-
 function isInlineImageURL(url: string, mediaType: string) {
   return (
-    url.startsWith(`data:${mediaType};`) ||
-    url.startsWith(`data:${mediaType},`) ||
-    url.startsWith("blob:")
+    url.startsWith(`data:${mediaType};`) || url.startsWith(`data:${mediaType},`)
   )
 }
 
-function isImageFilePart(part: { type: string }): part is FileUIPart {
-  if (!isFilePart(part)) return false
+function isImageFilePart(
+  part: ChatUIMessage["parts"][number]
+): part is FileUIPart {
+  if (!isFileUIPart(part)) return false
   return (
     ACCEPT_MIME.includes(part.mediaType) &&
-    (isInlineImageURL(part.url, part.mediaType) ||
-      isLocalChatMediaURL(part.url))
+    isInlineImageURL(part.url, part.mediaType)
   )
-}
-
-function readBlobAsDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-      } else {
-        reject(new Error(i18n.t("errors.readFileFailed")))
-      }
-    }
-    reader.onerror = () =>
-      reject(reader.error ?? new Error(i18n.t("errors.readFileFailed")))
-    reader.readAsDataURL(blob)
-  })
-}
-
-async function fetchChatMediaAsDataURL(url: string, token: string) {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  if (!res.ok) throw new Error(i18n.t("chat.imageLoadFailed"))
-
-  return readBlobAsDataURL(await res.blob())
 }
 
 function ChatImage({
   part,
   imageClassName,
-  placeholderClassName,
 }: {
   part: FileUIPart
   imageClassName: string
-  placeholderClassName: string
 }) {
   const { t } = useTranslation()
-  const localMedia = isLocalChatMediaURL(part.url)
-  const directSrc = isInlineImageURL(part.url, part.mediaType) ? part.url : null
-  const [fetched, setFetched] = useState<{
-    url: string
-    src: string | null
-    failed: boolean
-  } | null>(null)
-  const fetchedMatches = fetched?.url === part.url
-  const src = directSrc ?? (fetchedMatches ? fetched.src : null)
-  const failed = !directSrc && fetchedMatches && fetched.failed
-
-  useEffect(() => {
-    let cancelled = false
-
-    if (directSrc || !localMedia) {
-      return
-    }
-
-    const token = getToken()
-    if (!token) {
-      queueMicrotask(() => {
-        if (!cancelled) {
-          setFetched({ url: part.url, src: null, failed: true })
-        }
-      })
-      return
-    }
-
-    fetchChatMediaAsDataURL(part.url, token)
-      .then((dataUrl) => {
-        if (!cancelled)
-          setFetched({ url: part.url, src: dataUrl, failed: false })
-      })
-      .catch(() => {
-        if (!cancelled) setFetched({ url: part.url, src: null, failed: true })
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [directSrc, localMedia, part.url])
-
-  if (!directSrc && !localMedia) return null
+  if (!isInlineImageURL(part.url, part.mediaType)) return null
 
   return (
     <a
-      href={src || undefined}
+      href={part.url}
       target="_blank"
       rel="noreferrer noopener"
       className="block"
-      onClick={(event) => {
-        if (!src) event.preventDefault()
-      }}
     >
-      {src ? (
-        <img
-          src={src}
-          alt={part.filename ?? t("chat.imageMessage")}
-          className={imageClassName}
-        />
-      ) : (
-        <div className={placeholderClassName}>
-          {failed ? (
-            <span className="px-2 text-center text-xs">
-              {t("chat.imageLoadFailed")}
-            </span>
-          ) : (
-            <Loader variant="circular" size="sm" />
-          )}
-        </div>
-      )}
+      <img
+        src={part.url}
+        alt={part.filename ?? t("chat.imageMessage")}
+        className={imageClassName}
+      />
     </a>
   )
 }
 
-function MessageBubble({ message }: { message: UIMessage }) {
+function MessageBubble({ message }: { message: ChatUIMessage }) {
   const isUser = message.role === "user"
   const text = textFromUIMessage(message)
   const images = message.parts.filter(isImageFilePart)
@@ -236,7 +116,6 @@ function MessageBubble({ message }: { message: UIMessage }) {
                   key={`${image.url}-${index}`}
                   part={image}
                   imageClassName="max-h-60 max-w-60 rounded-md border border-border object-cover"
-                  placeholderClassName="flex h-24 w-24 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
                 />
               ))}
             </div>
@@ -264,7 +143,6 @@ function MessageBubble({ message }: { message: UIMessage }) {
                 key={`${image.url}-${index}`}
                 part={image}
                 imageClassName="max-h-[28rem] max-w-full rounded-md border border-border object-contain"
-                placeholderClassName="flex h-40 w-40 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
               />
             ))}
           </div>
@@ -274,13 +152,12 @@ function MessageBubble({ message }: { message: UIMessage }) {
   )
 }
 
-function hasRenderableAssistantParts(parts: UIMessage["parts"]) {
+function hasRenderableAssistantParts(parts: ChatUIMessage["parts"]) {
   return parts.some(
     (part) =>
       (part.type === "text" && Boolean(part.text)) ||
       part.type === "file" ||
       part.type === "tool-web_search" ||
-      part.type === "tool-google_search" ||
       part.type === "tool-image_generation" ||
       part.type === "source-url"
   )
@@ -290,7 +167,7 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [input, setInput] = useState("")
-  const [attachments, setAttachments] = useState<LocalAttachment[]>([])
+  const [attachments, setAttachments] = useState<FileUIPart[]>([])
   const [webSearchEnabled, setWebSearchEnabled] = useState(true)
   const [imageGenerationEnabled, setImageGenerationEnabled] = useState(true)
   const [uploading, setUploading] = useState(false)
@@ -333,11 +210,16 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
         }
 
         try {
-          const [uploaded, dataUrl] = await Promise.all([
-            uploadChatAttachment(file),
-            readBlobAsDataURL(file),
+          const dataUrl = await readBlobAsDataURL(file)
+          setAttachments((prev) => [
+            ...prev,
+            {
+              type: "file",
+              mediaType: file.type,
+              url: dataUrl,
+              filename: file.name,
+            },
           ])
-          setAttachments((prev) => [...prev, { ...uploaded, dataUrl }])
         } catch (err) {
           toast.error(
             err instanceof Error ? err.message : t("errors.uploadFailed")
@@ -370,19 +252,19 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
     setInput("")
     setAttachments([])
     clearError()
-    let savedUser: ChatMessage | null = null
+    let savedUser: ChatUIMessage | null = null
     let targetSession = activeSession
     activeSession.sending = true
     try {
       const titleSeed =
-        text || pendingAttachments[0]?.name || t("chat.imageMessage")
+        text || pendingAttachments[0]?.filename || t("chat.imageMessage")
       const targetChatId = chatId ?? (await createChatForMessage(titleSeed))
-      const storageParts: MessagePart[] = [
+      const storageParts: ChatUIMessage["parts"] = [
         ...pendingAttachments.map((attachment) => ({
           type: "file" as const,
           mediaType: attachment.mediaType,
           url: attachment.url,
-          filename: attachment.name,
+          ...(attachment.filename ? { filename: attachment.filename } : {}),
         })),
         ...(text ? [{ type: "text" as const, text }] : []),
       ]
@@ -392,21 +274,20 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
         activeSession.sending = false
       }
       targetSession.chat.clearError()
-      savedUser = await appendChatMessage(targetChatId, "user", storageParts)
-      const savedUserMessage = chatMessagesToUIMessages([savedUser])[0]
-      if (!savedUserMessage) throw new Error(t("errors.sendFailed"))
+      savedUser = await appendChatMessage(targetChatId, {
+        id: crypto.randomUUID(),
+        role: "user",
+        parts: storageParts,
+      })
 
-      await targetSession.chat.sendMessage(
-        savedUserMessage,
-        {
-          body: {
-            chatId: targetChatId,
-            skipPersistUser: true,
-            webSearch: webSearchEnabled,
-            imageGeneration: imageGenerationEnabled,
-          },
-        }
-      )
+      await targetSession.chat.sendMessage(savedUser, {
+        body: {
+          chatId: targetChatId,
+          skipPersistUser: true,
+          webSearch: webSearchEnabled,
+          imageGeneration: imageGenerationEnabled,
+        },
+      })
     } catch (err) {
       if (!savedUser) {
         setInput(text)
@@ -478,8 +359,8 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
                     className="group relative h-16 w-16 overflow-hidden rounded-md border border-border bg-muted"
                   >
                     <img
-                      src={attachment.dataUrl}
-                      alt={attachment.name}
+                      src={attachment.url}
+                      alt={attachment.filename ?? t("chat.imageMessage")}
                       className="h-full w-full object-cover"
                     />
                     <Button

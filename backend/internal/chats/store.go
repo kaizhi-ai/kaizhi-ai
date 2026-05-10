@@ -133,14 +133,25 @@ func (s *Store) CountFilePartURLReferences(ctx context.Context, userID string, u
 	}
 
 	rows, err := s.db.Query(ctx, `
-		SELECT part->>'url' AS url, count(*)::int
-		FROM chat_messages cm
-		JOIN chat_sessions cs ON cs.id = cm.session_id
-		CROSS JOIN LATERAL jsonb_array_elements(cm.parts) AS part
-		WHERE cs.user_id = $1
-		  AND part->>'type' = 'file'
-		  AND part->>'url' = ANY($2)
-		GROUP BY part->>'url'
+		SELECT url, count(*)::int
+		FROM (
+			SELECT part->>'url' AS url
+			FROM chat_messages cm
+			JOIN chat_sessions cs ON cs.id = cm.session_id
+			CROSS JOIN LATERAL jsonb_array_elements(cm.parts) AS part
+			WHERE cs.user_id = $1
+			  AND part->>'type' = 'file'
+			  AND part->>'url' = ANY($2)
+			UNION ALL
+			SELECT part#>>'{output,result}' AS url
+			FROM chat_messages cm
+			JOIN chat_sessions cs ON cs.id = cm.session_id
+			CROSS JOIN LATERAL jsonb_array_elements(cm.parts) AS part
+			WHERE cs.user_id = $1
+			  AND part->>'type' = 'tool-image_generation'
+			  AND part#>>'{output,result}' = ANY($2)
+		) refs
+		GROUP BY url
 	`, userID, urls)
 	if err != nil {
 		return nil, err

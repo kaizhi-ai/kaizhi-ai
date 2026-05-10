@@ -5,10 +5,9 @@ import {
 } from "@ai-sdk/openai"
 import { Chat } from "@ai-sdk/react"
 import { convertToModelMessages, stepCountIs, streamText } from "ai"
-import type { ChatTransport, UIMessage } from "ai"
+import type { ChatTransport, ToolSet } from "ai"
 import { toast } from "sonner"
 
-import { getToken } from "@/lib/auth-client"
 import {
   ChatRuntimeContext,
   DRAFT_CHAT_ID,
@@ -16,198 +15,19 @@ import {
   type ChatRuntime,
   type RuntimeSession,
 } from "@/lib/chat-runtime-context"
-import {
-  appendChatMessage,
-  chatMessagesToUIMessages,
-  listChatMessages,
-  uiMessageToMessageParts,
-  uiMessageToMessagePartsWithGeneratedImages,
-} from "@/lib/chats-client"
+import type { ChatToolSet, ChatUIMessage } from "@/lib/chat-types"
+import { appendChatMessage, getToken, listChatMessages } from "@/lib/client"
 import i18n from "@/lib/i18n"
 
 const CHAT_MODEL = "gpt-5.5"
 const ACCEPT_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"]
-const DATA_IMAGE_URL_RE = /^data:([^;,]+);base64,/i
-const GENERATED_IMAGE_CONTEXT_TEXT =
-  "The previous assistant response generated the following image(s). Use them as visual context for subsequent edit or reference requests."
+const DATA_IMAGE_URL_RE = /^data:([^;,]+);base64,(.*)$/is
+const GENERATED_IMAGE_TOOL_TYPE = "tool-image_generation"
 
-type FileUIPart = {
-  type: "file"
-  mediaType: string
-  url: string
-  filename?: string
-}
-
-function isFilePart(part: { type: string }): part is FileUIPart {
-  if (part.type !== "file") return false
-  const file = part as Partial<FileUIPart>
-  return typeof file.mediaType === "string" && typeof file.url === "string"
-}
-
-function isLocalChatMediaURL(url: string) {
-  try {
-    const parsed = new URL(url, window.location.origin)
-    return (
-      parsed.origin === window.location.origin &&
-      parsed.pathname.startsWith("/api/v1/chats/media/")
-    )
-  } catch {
-    return false
-  }
-}
-
-function isInlineImageURL(url: string, mediaType: string) {
-  return (
-    url.startsWith(`data:${mediaType};`) ||
-    url.startsWith(`data:${mediaType},`) ||
-    url.startsWith("blob:")
-  )
-}
-
-function isImageFilePart(part: { type: string }): part is FileUIPart {
-  if (!isFilePart(part)) return false
-  return (
-    ACCEPT_MIME.includes(part.mediaType) &&
-    (isInlineImageURL(part.url, part.mediaType) ||
-      isLocalChatMediaURL(part.url))
-  )
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
-
-function generatedImageFilePart(
-  part: UIMessage["parts"][number]
-): FileUIPart | null {
-  if (part.type !== "tool-image_generation") return null
-  const tool = part as unknown as {
-    state?: unknown
-    output?: unknown
-    preliminary?: unknown
-  }
-  if (tool.state !== "output-available" || tool.preliminary === true) {
-    return null
-  }
-
-  const output = asRecord(tool.output)
-  const result = typeof output?.result === "string" ? output.result.trim() : ""
-  if (!result) return null
-
-  const url = result.startsWith("data:image/")
-    ? result
-    : `data:image/webp;base64,${result}`
-  const mediaType = DATA_IMAGE_URL_RE.exec(url)?.[1].toLowerCase()
-  if (!mediaType || !ACCEPT_MIME.includes(mediaType)) return null
-
-  return {
-    type: "file",
-    mediaType,
-    url,
-    filename: "generated-image",
-  }
-}
-
-function readBlobAsDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result)
-      } else {
-        reject(new Error(i18n.t("errors.readFileFailed")))
-      }
-    }
-    reader.onerror = () =>
-      reject(reader.error ?? new Error(i18n.t("errors.readFileFailed")))
-    reader.readAsDataURL(blob)
-  })
-}
-
-async function fetchChatMediaAsDataURL(url: string, token: string) {
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
-  if (!res.ok) throw new Error(i18n.t("chat.imageLoadFailed"))
-
-  return readBlobAsDataURL(await res.blob())
-}
-
-async function inlineImageFilePartForModel(part: FileUIPart, token: string) {
-  if (!isImageFilePart(part)) return null
-  if (part.url.startsWith("data:")) return part
-
-  if (!isLocalChatMediaURL(part.url) && !part.url.startsWith("blob:")) {
-    return null
-  }
-
-  return {
-    ...part,
-    url: await fetchChatMediaAsDataURL(part.url, token),
-  }
-}
-
-async function inlineChatFilesForModel(messages: UIMessage[], token: string) {
-  const modelMessages: UIMessage[] = []
-
-  for (const message of messages) {
-    const imageContextParts: FileUIPart[] = []
-    const seenImageUrls = new Set<string>()
-    const visibleParts: UIMessage["parts"] = []
-
-    for (const part of message.parts) {
-      if (part.type === "tool-image_generation") {
-        const generated = generatedImageFilePart(part)
-        if (generated && !seenImageUrls.has(generated.url)) {
-          seenImageUrls.add(generated.url)
-          imageContextParts.push(generated)
-        }
-        continue
-      }
-
-      if (!isFilePart(part)) {
-        visibleParts.push(part)
-        continue
-      }
-
-      const inlined = await inlineImageFilePartForModel(part, token)
-      if (!inlined) continue
-
-      if (message.role === "assistant") {
-        if (!seenImageUrls.has(inlined.url)) {
-          seenImageUrls.add(inlined.url)
-          imageContextParts.push(inlined)
-        }
-        continue
-      }
-
-      visibleParts.push(inlined)
-    }
-    if (message.role !== "assistant" || visibleParts.length > 0) {
-      modelMessages.push({
-        ...message,
-        parts: visibleParts,
-      })
-    }
-
-    if (message.role === "assistant" && imageContextParts.length > 0) {
-      modelMessages.push({
-        id: `${message.id}-generated-image-context`,
-        role: "user",
-        parts: [
-          { type: "text", text: GENERATED_IMAGE_CONTEXT_TEXT },
-          ...imageContextParts,
-        ] as UIMessage["parts"],
-      })
-    }
-  }
-
-  return modelMessages
-}
+type GeneratedImageOutputPart = Extract<
+  ChatUIMessage["parts"][number],
+  { type: "tool-image_generation"; state: "output-available" }
+>
 
 function chatIdFromBody(body: unknown, fallback?: string) {
   if (body && typeof body === "object" && "chatId" in body) {
@@ -238,7 +58,126 @@ function shouldUseImageGeneration(body: unknown) {
   return true
 }
 
-function createRuntimeTransport(): ChatTransport<UIMessage> {
+function isGeneratedImageOutputPart(
+  part: ChatUIMessage["parts"][number]
+): part is GeneratedImageOutputPart {
+  if (part.type !== GENERATED_IMAGE_TOOL_TYPE) return false
+  if (part.state !== "output-available" || part.preliminary === true) {
+    return false
+  }
+  return (
+    typeof part.output.result === "string" && part.output.result.trim() !== ""
+  )
+}
+
+function generatedImageOutputToFilePart(part: GeneratedImageOutputPart) {
+  const result = part.output.result.trim()
+  const dataURLMatch = DATA_IMAGE_URL_RE.exec(result)
+  const mediaType = dataURLMatch?.[1].toLowerCase() ?? "image/webp"
+  if (!ACCEPT_MIME.includes(mediaType)) return null
+
+  const imageURL = dataURLMatch
+    ? `data:${mediaType};base64,${dataURLMatch[2].replace(/\s/g, "")}`
+    : `data:${mediaType};base64,${result.replace(/\s/g, "")}`
+
+  return {
+    type: "file" as const,
+    mediaType,
+    url: imageURL,
+    filename: `generated-image.${mediaType === "image/jpeg" ? "jpg" : mediaType.slice("image/".length)}`,
+  }
+}
+
+function withGeneratedImageReferenceMessages(
+  messages: ChatUIMessage[]
+): ChatUIMessage[] {
+  const out: ChatUIMessage[] = []
+  let imageIndex = 0
+
+  for (const message of messages) {
+    out.push(message)
+
+    for (const part of message.parts) {
+      if (!isGeneratedImageOutputPart(part)) continue
+
+      const filePart = generatedImageOutputToFilePart(part)
+      if (!filePart) continue
+
+      imageIndex += 1
+      out.push({
+        id: `${message.id}-generated-image-context-${imageIndex}`,
+        role: "user",
+        parts: [
+          {
+            type: "text",
+            text: `Reference image ${imageIndex} generated earlier by the assistant.`,
+          },
+          filePart,
+        ],
+      })
+    }
+  }
+
+  return out
+}
+
+function createImageGenerationTool(openai: ReturnType<typeof createOpenAI>) {
+  const imageGeneration = openai.tools.imageGeneration({
+    model: "gpt-image-2",
+    size: "auto",
+    quality: "auto",
+    outputFormat: "webp",
+  })
+
+  imageGeneration.toModelOutput = ({ output }) => {
+    const result = output.result
+    const trimmed = result.trim()
+    if (!trimmed) {
+      return {
+        type: "json" as const,
+        value: { result },
+      }
+    }
+
+    const dataURLMatch = DATA_IMAGE_URL_RE.exec(trimmed)
+    const mediaType = dataURLMatch?.[1].toLowerCase() ?? "image/webp"
+    if (!ACCEPT_MIME.includes(mediaType)) {
+      return {
+        type: "json" as const,
+        value: { result },
+      }
+    }
+
+    return {
+      type: "content" as const,
+      value: [
+        {
+          type: "image-data" as const,
+          data: (dataURLMatch?.[2] ?? trimmed).replace(/\s/g, ""),
+          mediaType,
+        },
+      ],
+    }
+  }
+
+  return imageGeneration
+}
+
+function activeToolsFromOptions(
+  tools: ChatToolSet,
+  body: unknown
+): ToolSet | undefined {
+  const activeTools = {
+    ...(shouldUseWebSearch(body) ? { web_search: tools.web_search } : {}),
+    ...(shouldUseImageGeneration(body)
+      ? { image_generation: tools.image_generation }
+      : {}),
+  }
+
+  return Object.keys(activeTools).length > 0 ? activeTools : undefined
+}
+
+function createRuntimeTransport(): ChatTransport<ChatUIMessage> {
   return {
     async sendMessages({ messages, abortSignal, body, chatId }) {
       const targetChatId = chatIdFromBody(body, chatId)
@@ -250,11 +189,7 @@ function createRuntimeTransport(): ChatTransport<UIMessage> {
         .reverse()
         .find((message) => message.role === "user")
       if (userMessage && shouldPersistUserMessage(body)) {
-        await appendChatMessage(
-          targetChatId,
-          "user",
-          uiMessageToMessageParts(userMessage)
-        )
+        await appendChatMessage(targetChatId, userMessage)
       }
 
       const token = getToken()
@@ -263,27 +198,21 @@ function createRuntimeTransport(): ChatTransport<UIMessage> {
         apiKey: token,
         baseURL: `${window.location.origin}/v1`,
       })
-      const modelMessages = await inlineChatFilesForModel(messages, token)
-      const tools = {
-        ...(shouldUseWebSearch(body)
-          ? { web_search: openai.tools.webSearch() }
-          : {}),
-        ...(shouldUseImageGeneration(body)
-          ? {
-              image_generation: openai.tools.imageGeneration({
-                model: "gpt-image-2",
-                size: "auto",
-                quality: "auto",
-                outputFormat: "webp",
-              }),
-            }
-          : {}),
+      const tools: ChatToolSet = {
+        web_search: openai.tools.webSearch(),
+        image_generation: createImageGenerationTool(openai),
       }
-      const activeTools = Object.keys(tools).length > 0 ? tools : undefined
+      const activeTools = activeToolsFromOptions(tools, body)
+      const modelInputMessages = withGeneratedImageReferenceMessages(messages)
 
       const result = streamText({
         model: openai.responses(CHAT_MODEL),
-        messages: await convertToModelMessages(modelMessages),
+        messages: await convertToModelMessages<ChatUIMessage>(
+          modelInputMessages,
+          {
+            tools,
+          }
+        ),
         tools: activeTools,
         stopWhen: activeTools ? stepCountIs(5) : undefined,
         abortSignal,
@@ -298,16 +227,15 @@ function createRuntimeTransport(): ChatTransport<UIMessage> {
         originalMessages: messages,
         sendSources: true,
         onFinish: async ({ responseMessage }) => {
-          const { parts, failedUploads } =
-            await uiMessageToMessagePartsWithGeneratedImages(responseMessage)
-          if (failedUploads > 0) {
-            toast.error(i18n.t("chat.generatedImageSaveFailed"))
+          try {
+            await appendChatMessage(targetChatId, responseMessage)
+          } catch (err) {
+            toast.error(
+              err instanceof Error && err.message
+                ? err.message
+                : i18n.t("errors.saveFailed")
+            )
           }
-          await appendChatMessage(
-            targetChatId,
-            "assistant",
-            parts
-          )
         },
       })
     },
@@ -326,7 +254,7 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
       if (existing) return existing
 
       const session: RuntimeSession = {
-        chat: new Chat<UIMessage>({
+        chat: new Chat<ChatUIMessage>({
           id: chatId,
           messages: [],
           transport: createRuntimeTransport(),
@@ -362,7 +290,7 @@ export function ChatRuntimeProvider({ children }: { children: ReactNode }) {
             session.loaded = true
             return
           }
-          session.chat.messages = chatMessagesToUIMessages(messages)
+          session.chat.messages = messages
           session.loaded = true
         })
         .finally(() => {

@@ -12,12 +12,13 @@ import { toast } from "sonner"
 
 import {
   createAPIKey,
+  fetchAppConfig,
   listAPIKeys,
   renameAPIKey,
   revokeAPIKey,
   type APIKey,
   type APIKeyExpiry,
-} from "@/lib/api-keys-client"
+} from "@/lib/client"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -355,11 +356,7 @@ function APIKeyClientGuide() {
 
   useEffect(() => {
     let cancelled = false
-    fetch("/api/v1/app-config")
-      .then((res) => {
-        if (!res.ok) return null
-        return res.json() as Promise<{ public_base_url?: string }>
-      })
+    fetchAppConfig()
       .then((data) => {
         if (cancelled) return
         setConfiguredOrigin(normalizeClientBaseURL(data?.public_base_url))

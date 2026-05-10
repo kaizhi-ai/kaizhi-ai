@@ -20,7 +20,7 @@ import {
   type AdminUser,
   type AdminUserLanguage,
   type AdminUserRole,
-} from "@/lib/admin-users-client"
+} from "@/lib/client"
 import { useAuth } from "@/lib/auth-context"
 import { languageOptions, supportedLanguage } from "@/lib/i18n"
 import {

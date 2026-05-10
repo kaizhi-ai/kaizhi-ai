@@ -35,6 +35,11 @@ var imageKindsByExt = map[string]imageKind{
 	".webp": {mediaType: "image/webp", ext: "webp"},
 }
 
+var (
+	errLocalChatMediaURL   = errors.New("file attachments must use local chat media URLs")
+	errSupportedLocalImage = errors.New("file attachment must be a supported local image")
+)
+
 func (h *Handlers) uploadAttachment(c *gin.Context) {
 	user := apikeys.CurrentUser(c)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxUploadBytes+(1<<20))
@@ -96,7 +101,7 @@ func (h *Handlers) uploadAttachment(c *gin.Context) {
 	}
 	filename := id + "." + kind.ext
 	rawURL := chatMediaURLPrefix + user.ID + "/" + filename
-	_, target, ok := h.resolveChatMediaPath(user.ID, filename)
+	target, ok := h.resolveChatMediaPath(user.ID, filename)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成文件路径失败"})
 		return
@@ -134,7 +139,7 @@ func (h *Handlers) serveAttachment(c *gin.Context) {
 		return
 	}
 
-	_, target, ok := h.resolveChatMediaPath(userID, filename)
+	target, ok := h.resolveChatMediaPath(userID, filename)
 	if !ok {
 		c.Status(http.StatusNotFound)
 		return
@@ -223,9 +228,9 @@ func (h *Handlers) validateLocalChatImageURL(userID, rawURL, mediaType string) e
 		return err
 	}
 
-	_, target, ok := h.resolveChatMediaPath(userID, filename)
+	target, ok := h.resolveChatMediaPath(userID, filename)
 	if !ok {
-		return errors.New("file attachments must use local chat media URLs")
+		return errLocalChatMediaURL
 	}
 	info, err := os.Stat(target)
 	if err != nil || !info.Mode().IsRegular() {
@@ -235,8 +240,16 @@ func (h *Handlers) validateLocalChatImageURL(userID, rawURL, mediaType string) e
 }
 
 func localChatImageFilename(userID, rawURL, mediaType string) (string, error) {
+	return localChatImageFilenameWithMediaType(userID, rawURL, mediaType, false)
+}
+
+func localGeneratedChatImageFilename(userID, rawURL string) (string, error) {
+	return localChatImageFilenameWithMediaType(userID, rawURL, "", true)
+}
+
+func localChatImageFilenameWithMediaType(userID, rawURL, mediaType string, allowEmptyMediaType bool) (string, error) {
 	if strings.TrimSpace(rawURL) == "" || rawURL != strings.TrimSpace(rawURL) {
-		return "", errors.New("file attachments must use local chat media URLs")
+		return "", errLocalChatMediaURL
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil ||
@@ -245,21 +258,28 @@ func localChatImageFilename(userID, rawURL, mediaType string) (string, error) {
 		parsed.RawQuery != "" ||
 		parsed.Fragment != "" ||
 		parsed.Path != rawURL {
-		return "", errors.New("file attachments must use local chat media URLs")
+		return "", errLocalChatMediaURL
 	}
 	if !strings.HasPrefix(parsed.Path, chatMediaURLPrefix) {
-		return "", errors.New("file attachments must use local chat media URLs")
+		return "", errLocalChatMediaURL
 	}
 
 	rest := strings.TrimPrefix(parsed.Path, chatMediaURLPrefix)
 	segments := strings.Split(rest, "/")
 	if len(segments) != 2 || segments[0] != userID {
-		return "", errors.New("file attachments must use local chat media URLs")
+		return "", errLocalChatMediaURL
 	}
 
 	kind, ok := imageKindForFilename(segments[1])
-	if !ok || mediaType != kind.mediaType {
-		return "", errors.New("file attachment must be a supported local image")
+	if !ok {
+		return "", errSupportedLocalImage
+	}
+	if mediaType == "" {
+		if !allowEmptyMediaType {
+			return "", errSupportedLocalImage
+		}
+	} else if mediaType != kind.mediaType {
+		return "", errSupportedLocalImage
 	}
 	return segments[1], nil
 }
@@ -271,21 +291,40 @@ func (h *Handlers) chatMediaFiles(userID string, messages []ChatMessage) map[str
 			Type      string `json:"type"`
 			MediaType string `json:"mediaType"`
 			URL       string `json:"url"`
+			Output    struct {
+				Result string `json:"result"`
+			} `json:"output"`
 		}
 		if err := json.Unmarshal(message.Parts, &parts); err != nil {
 			continue
 		}
 		for _, part := range parts {
-			if part.Type != "file" {
+			rawURL := ""
+			mediaType := part.MediaType
+			switch part.Type {
+			case "file":
+				rawURL = part.URL
+			case "tool-image_generation":
+				rawURL = part.Output.Result
+				filename, err := localGeneratedChatImageFilename(userID, rawURL)
+				if err != nil {
+					continue
+				}
+				target, ok := h.resolveChatMediaPath(userID, filename)
+				if ok {
+					files[rawURL] = target
+				}
+				continue
+			default:
 				continue
 			}
-			filename, err := localChatImageFilename(userID, part.URL, part.MediaType)
+			filename, err := localChatImageFilename(userID, rawURL, mediaType)
 			if err != nil {
 				continue
 			}
-			_, target, ok := h.resolveChatMediaPath(userID, filename)
+			target, ok := h.resolveChatMediaPath(userID, filename)
 			if ok {
-				files[part.URL] = target
+				files[rawURL] = target
 			}
 		}
 	}
@@ -365,17 +404,17 @@ func (h *Handlers) chatUserMediaDir(userID string) string {
 	return filepath.Join(h.mediaRoot, "chat", userID)
 }
 
-func (h *Handlers) resolveChatMediaPath(userID, filename string) (string, string, bool) {
+func (h *Handlers) resolveChatMediaPath(userID, filename string) (string, bool) {
 	if !isSafeFilename(filename) {
-		return "", "", false
+		return "", false
 	}
 	userDir := h.chatUserMediaDir(userID)
 	target := filepath.Join(userDir, filename)
 	rel, err := filepath.Rel(userDir, target)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
-		return "", "", false
+		return "", false
 	}
-	return userDir, target, true
+	return target, true
 }
 
 func isSafeFilename(filename string) bool {

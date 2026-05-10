@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { useChatRuntime } from "@/lib/chat-runtime-context"
-import { deleteChat, listChats, type ChatSession } from "@/lib/chats-client"
+import { deleteChat, listChats, type ChatSession } from "@/lib/client"
 import {
   AlertDialog,
   AlertDialogAction,
