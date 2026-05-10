@@ -181,3 +181,25 @@
     @apply font-sans;
   }
 }
+
+@layer components {
+  .shiki {
+    color: var(--shiki-light);
+    background-color: var(--shiki-light-bg);
+  }
+
+  .shiki span {
+    color: var(--shiki-light);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .shiki {
+      color: var(--shiki-dark);
+      background-color: var(--shiki-dark-bg);
+    }
+
+    .shiki span {
+      color: var(--shiki-dark);
+    }
+  }
+}

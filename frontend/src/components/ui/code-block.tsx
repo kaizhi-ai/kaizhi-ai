@@ -29,6 +29,7 @@ export type CodeBlockCodeProps = {
   code: string
   language?: string
   theme?: string
+  darkTheme?: string
   className?: string
 } & React.HTMLProps<HTMLDivElement>
 
@@ -36,6 +37,7 @@ function CodeBlockCode({
   code,
   language = "tsx",
   theme = "github-light",
+  darkTheme = "github-dark",
   className,
   ...props
 }: CodeBlockCodeProps) {
@@ -48,11 +50,18 @@ function CodeBlockCode({
         return
       }
 
-      const html = await codeToHtml(code, { lang: language, theme })
+      const html = await codeToHtml(code, {
+        lang: language,
+        themes: {
+          light: theme,
+          dark: darkTheme,
+        },
+        defaultColor: false,
+      })
       setHighlightedHtml(html)
     }
     highlight()
-  }, [code, language, theme])
+  }, [code, darkTheme, language, theme])
 
   const classNames = cn(
     "w-full overflow-x-auto text-[13px] [&>pre]:px-4 [&>pre]:py-4",
