@@ -363,7 +363,21 @@ func (h *Handlers) saveProviderConfigLocked(cfg *sdkconfig.Config) error {
 	if h == nil || strings.TrimSpace(h.configPath) == "" {
 		return errProviderConfigNotConfigured
 	}
-	return sdkconfig.SaveConfigPreserveComments(h.configPath, cfg)
+	h.applyRuntimeProviderConfigLocked(cfg)
+	if err := sdkconfig.SaveConfigPreserveComments(h.configPath, cfg); err != nil {
+		return err
+	}
+	h.cfg = cfg
+	return nil
+}
+
+func (h *Handlers) applyRuntimeProviderConfigLocked(cfg *sdkconfig.Config) {
+	if h == nil || cfg == nil || h.cfg == nil {
+		return
+	}
+	if authDir := strings.TrimSpace(h.cfg.AuthDir); authDir != "" {
+		cfg.AuthDir = authDir
+	}
 }
 
 func (h *Handlers) providerModelFetchProxyURL(proxyURL string) string {

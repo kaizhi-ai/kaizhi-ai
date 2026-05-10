@@ -243,6 +243,43 @@ func TestProviderAPIKeyFetchModelsUsesStoredProxyURL(t *testing.T) {
 	}
 }
 
+func TestProviderAPIKeyCreatePreservesRuntimeAuthDir(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte(`host: "127.0.0.1"
+port: 8317
+auth-dir: "auths"
+api-keys: []
+remote-management:
+  allow-remote: false
+  secret-key: ""
+`), 0o600); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+
+	runtimeAuthDir := filepath.Join(t.TempDir(), "auths")
+	handlers := NewHandlers(nil, nil, nil, nil, nil, configPath)
+	handlers.SetCLIProxyConfig(&sdkconfig.Config{AuthDir: runtimeAuthDir})
+
+	router := gin.New()
+	router.POST(providerAPIKeyTestPath, handlers.createProviderAPIKey)
+
+	resp := doProviderAPIKeyJSON(t, router, http.MethodPost, providerAPIKeyTestPath, map[string]any{
+		"provider": "codex",
+		"api_key":  "sk-test-secret-0001",
+		"base_url": "https://api.openai.com/v1",
+	})
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s, want 201", resp.Code, resp.Body.String())
+	}
+
+	cfg := loadProviderAPIKeyTestConfig(t, configPath)
+	if cfg.AuthDir != runtimeAuthDir {
+		t.Fatalf("AuthDir = %q, want runtime auth dir %q", cfg.AuthDir, runtimeAuthDir)
+	}
+}
+
 func TestOpenAICompatibilityProviderCreateListPatchAndDelete(t *testing.T) {
 	router, configPath := newProviderAPIKeyTestRouter(t)
 	rawKey := "sk-or-v1-secret-0001"
